@@ -1,70 +1,37 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# tests/run_tests.sh - Auto-detect and run tests in containers
+# Auto-detects Incus (preferred) or Docker
+# Per PART 13: NEVER run binaries on host - ALWAYS use containers
+
 set -e
 
-echo "=== casspeed Test Suite ==="
+PROJECT_NAME="casspeed"
+BINARY_NAME="casspeed"
 
-BINDIR="binaries"
-SERVER="$BINDIR/casspeed"
-CLIENT="$BINDIR/casspeed-cli"
-PORT=64580
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-if [ ! -f "$SERVER" ]; then
-    echo "Error: Server binary not found. Run 'make build' first."
-    exit 1
-fi
+echo "========================================="
+echo " Casspeed Test Runner"
+echo "========================================="
+echo
 
-if [ ! -f "$CLIENT" ]; then
-    echo "Error: Client binary not found. Run 'make build' first."
-    exit 1
-fi
-
-echo "✓ Binaries found"
-
-echo "Starting server on port $PORT..."
-$SERVER --port $PORT &
-SERVER_PID=$!
-sleep 3
-
-if ! kill -0 $SERVER_PID 2>/dev/null; then
-    echo "✗ Server failed to start"
-    exit 1
-fi
-
-echo "✓ Server started (PID: $SERVER_PID)"
-
-echo "Testing health endpoint..."
-HEALTH=$(curl -s http://localhost:$PORT/health)
-if echo "$HEALTH" | grep -q '"status":"ok"'; then
-    echo "✓ Health check passed"
+# Check if Incus is available (preferred)
+if command -v incus &> /dev/null; then
+    echo -e "${GREEN}✓ Incus detected (PREFERRED - full OS with systemd)${NC}"
+    exec "$(dirname "$0")/incus.sh"
+elif command -v docker &> /dev/null; then
+    echo -e "${YELLOW}✓ Docker detected (fallback - quick tests)${NC}"
+    exec "$(dirname "$0")/docker.sh"
 else
-    echo "✗ Health check failed"
-    kill $SERVER_PID
+    echo -e "${RED}✗ Neither Incus nor Docker found${NC}"
+    echo
+    echo "Please install one of:"
+    echo "  - Incus (preferred): https://linuxcontainers.org/incus/"
+    echo "  - Docker: https://docs.docker.com/get-docker/"
     exit 1
 fi
 
-echo "Testing API root..."
-API=$(curl -s http://localhost:$PORT/api/v1/)
-if echo "$API" | grep -q '"version":"v1"'; then
-    echo "✓ API root check passed"
-else
-    echo "✗ API root check failed"
-    kill $SERVER_PID
-    exit 1
-fi
-
-echo "Testing web UI..."
-UI=$(curl -s http://localhost:$PORT/)
-if echo "$UI" | grep -q "casspeed"; then
-    echo "✓ Web UI check passed"
-else
-    echo "✗ Web UI check failed"
-    kill $SERVER_PID
-    exit 1
-fi
-
-echo "Stopping server..."
-kill $SERVER_PID
-wait $SERVER_PID 2>/dev/null
-
-echo ""
-echo "=== All Tests Passed ✓ ==="

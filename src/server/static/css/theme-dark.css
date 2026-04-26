@@ -1,0 +1,10 @@
+/* Dark Theme (Default) */
+:root {
+  --bg-color: #1a1a1a;
+  --text-color: #e0e0e0;
+  --text-muted: #888;
+  --border-color: #333;
+  --link-color: #66b3ff;
+  --hover-color: #2a2a2a;
+  --progress-bg: #333;
+}

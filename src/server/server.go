@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,9 @@ import (
 	"github.com/casapps/casspeed/src/admin"
 	"github.com/casapps/casspeed/src/config"
 	"github.com/casapps/casspeed/src/graphql"
+	"github.com/casapps/casspeed/src/logging"
+	"github.com/casapps/casspeed/src/metrics"
+	srcMiddleware "github.com/casapps/casspeed/src/middleware"
 	"github.com/casapps/casspeed/src/mode"
 	"github.com/casapps/casspeed/src/server/handler"
 	"github.com/casapps/casspeed/src/server/service"
@@ -24,6 +28,12 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
+
+//go:embed template/* static/*
+var templateFS embed.FS
+
+//go:embed static/*
+var staticFS embed.FS
 
 type Server struct {
 	Config       *config.Config
@@ -35,6 +45,7 @@ type Server struct {
 	ImageHandler *handler.ShareImageHandler
 	UserHandler  *handler.UserHandler
 	AdminHandler *admin.Handler
+	Logger       *logging.Logger
 	ipTestCount  map[string]*ipRateLimit
 	ipMutex      sync.RWMutex
 	startTime    time.Time
@@ -46,12 +57,26 @@ type ipRateLimit struct {
 	lastTest    time.Time
 }
 
-func New(cfg *config.Config, appMode *mode.State, dataDir string, version string) (*Server, error) {
+func New(cfg *config.Config, appMode *mode.State, dataDir string, logDir string, version string) (*Server, error) {
+	// Initialize logging
+	logger, err := logging.New(logDir)
+	if err != nil {
+		return nil, fmt.Errorf("initializing logger: %w", err)
+	}
+	
 	dbPath := filepath.Join(dataDir, "db", "speedtest.db")
 	dbStore, err := store.NewSQLiteStore(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("creating store: %w", err)
 	}
+
+	// Check if setup is complete from database
+	ctx := context.Background()
+	setupComplete, err := dbStore.GetSetupComplete(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking setup status: %w", err)
+	}
+	admin.SetSetupComplete(setupComplete)
 
 	speedTestService := service.NewSpeedTestService(cfg.Test.MaxThreads, cfg.Test.ChunkSize)
 	speedTestHandler := handler.NewSpeedTestHandler(dbStore, speedTestService)
@@ -68,6 +93,7 @@ func New(cfg *config.Config, appMode *mode.State, dataDir string, version string
 		ImageHandler: imageHandler,
 		UserHandler:  userHandler,
 		AdminHandler: adminHandler,
+		Logger:       logger,
 		ipTestCount:  make(map[string]*ipRateLimit),
 		startTime:    time.Now(),
 		version:      version,
@@ -80,6 +106,12 @@ func New(cfg *config.Config, appMode *mode.State, dataDir string, version string
 }
 
 func (s *Server) setupMiddleware() {
+	// Path security middleware FIRST (PART 5 - NON-NEGOTIABLE)
+	s.Router.Use(srcMiddleware.PathSecurityMiddleware)
+
+	// Security headers (PART 11 - NON-NEGOTIABLE)
+	s.Router.Use(securityHeaders(s.Config.Server.SSL.Enabled))
+
 	s.Router.Use(middleware.RequestID)
 	s.Router.Use(middleware.RealIP)
 	s.Router.Use(middleware.Logger)
@@ -104,14 +136,35 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
+	// Static files (CSS, JS, images) - served from embedded FS
+	staticHandler := http.FileServer(http.FS(staticFS))
+	s.Router.Handle("/static/*", http.StripPrefix("/static", staticHandler))
+	
 	s.Router.Get("/", s.handleIndex)
+
+	// Well-known files (PART 11 - NON-NEGOTIABLE)
+	s.Router.Get("/robots.txt", s.handleRobotsTxt)
+	s.Router.Get("/.well-known/security.txt", s.handleSecurityTxt)
+	s.Router.Get("/.well-known/change-password", s.handleChangePassword)
+
 	s.Router.Get("/healthz", s.handleHealth)
+	s.Router.Get("/healthz.json", s.handleHealth)
+	s.Router.Get("/healthz.txt", s.handleHealth)
 
 	s.Router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/", s.handleAPIRoot)
 		r.Get("/healthz", s.handleHealth)
+		r.Get("/healthz.json", s.handleHealth)
+		r.Get("/healthz.txt", s.handleHealth)
 		
-		// Speed test endpoints
+		// Auth endpoints (public)
+		authHandler := handler.NewAuthHandler(s.Store)
+		r.Post("/auth/register", s.UserHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/logout", authHandler.Logout)
+		r.Post("/auth/password/forgot", authHandler.PasswordResetRequest)
+		
+		// Speed test endpoints (public)
 		r.Post("/speedtest/start", s.Handler.StartTest)
 		r.Get("/speedtest/ws", s.Handler.TestStatus)
 		r.Get("/speedtest/download", s.Handler.Download)
@@ -119,8 +172,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/speedtest/result/{id}", s.Handler.GetResult)
 		r.Get("/speedtest/history", s.Handler.GetHistory)
 
-		// User management endpoints
-		r.Post("/users/register", s.UserHandler.Register)
+		// User management endpoints (authenticated)
 		r.Get("/users/{id}", s.UserHandler.GetProfile)
 		r.Get("/users/{id}/devices", s.UserHandler.ListDevices)
 		r.Post("/users/{id}/devices", s.UserHandler.CreateDevice)
@@ -134,15 +186,60 @@ func (s *Server) setupRoutes() {
 		r.Put("/admin/settings", s.AdminHandler.RequireAuth(s.AdminHandler.UpdateSettings))
 	})
 
-	// Admin panel web UI
-	s.Router.Get("/admin", s.AdminHandler.Login)
-	s.Router.Post("/admin/login", s.AdminHandler.Login)
-	s.Router.Get("/admin/logout", s.AdminHandler.Logout)
-	s.Router.Get("/admin/dashboard", s.AdminHandler.RequireAuth(s.AdminHandler.Dashboard))
-	s.Router.Get("/admin/server/settings", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSettings))
-	s.Router.Get("/admin/server/info", s.AdminHandler.RequireAuth(s.AdminHandler.ServerInfo))
-	s.Router.Get("/admin/server/logs", s.AdminHandler.RequireAuth(s.AdminHandler.ServerLogs))
+	// Admin panel web UI (PART 17 route hierarchy)
+	// Get admin path from config (default: "admin")
+	adminPath := s.Config.Server.AdminPath
+	if adminPath == "" {
+		adminPath = "admin"
+	}
 
+	// Setup wizard routes (accessible without auth before setup complete)
+	s.Router.Post("/"+adminPath+"/setup/token", s.AdminHandler.SetupTokenHandler)
+	s.Router.Get("/"+adminPath+"/setup", s.AdminHandler.SetupWizardHandler)
+	s.Router.Post("/"+adminPath+"/setup/complete", s.AdminHandler.SetupCompleteHandler)
+
+	// Admin root routes (PART 17 hierarchy)
+	// /{adminpath}/ = Dashboard (after login)
+	// /{adminpath}/profile = Admin's own profile
+	// /{adminpath}/preferences = Admin's own preferences
+	// /{adminpath}/notifications = Admin's own notifications
+	// /{adminpath}/server/* = ALL server management
+	s.Router.Get("/"+adminPath, s.AdminHandler.Login)
+	s.Router.Post("/"+adminPath+"/login", s.AdminHandler.Login)
+	s.Router.Get("/"+adminPath+"/logout", s.AdminHandler.Logout)
+
+	// Dashboard at root (after auth)
+	s.Router.Get("/"+adminPath+"/", s.AdminHandler.RequireAuth(s.AdminHandler.Dashboard))
+
+	// Admin's own profile/preferences (root level per PART 17)
+	s.Router.Get("/"+adminPath+"/profile", s.AdminHandler.RequireAuth(s.AdminHandler.Profile))
+	s.Router.Get("/"+adminPath+"/preferences", s.AdminHandler.RequireAuth(s.AdminHandler.Preferences))
+	s.Router.Get("/"+adminPath+"/notifications", s.AdminHandler.RequireAuth(s.AdminHandler.Notifications))
+
+	// Server management routes (PART 17: ALL server management under /server/*)
+	s.Router.Get("/"+adminPath+"/server/settings", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSettings))
+	s.Router.Get("/"+adminPath+"/server/info", s.AdminHandler.RequireAuth(s.AdminHandler.ServerInfo))
+	s.Router.Get("/"+adminPath+"/server/logs", s.AdminHandler.RequireAuth(s.AdminHandler.ServerLogs))
+	s.Router.Get("/"+adminPath+"/server/logs/audit", s.AdminHandler.RequireAuth(s.AdminHandler.ServerAuditLogs))
+	s.Router.Get("/"+adminPath+"/server/backup", s.AdminHandler.RequireAuth(s.AdminHandler.ServerBackup))
+	s.Router.Get("/"+adminPath+"/server/updates", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUpdates))
+	s.Router.Get("/"+adminPath+"/server/ssl", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSSL))
+	s.Router.Get("/"+adminPath+"/server/email", s.AdminHandler.RequireAuth(s.AdminHandler.ServerEmail))
+	s.Router.Get("/"+adminPath+"/server/scheduler", s.AdminHandler.RequireAuth(s.AdminHandler.ServerScheduler))
+	s.Router.Get("/"+adminPath+"/server/metrics", s.AdminHandler.RequireAuth(s.AdminHandler.ServerMetrics))
+
+	// Network settings
+	s.Router.Get("/"+adminPath+"/server/network/tor", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkTor))
+	s.Router.Get("/"+adminPath+"/server/network/geoip", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkGeoIP))
+
+	// Security settings
+	s.Router.Get("/"+adminPath+"/server/security/auth", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityAuth))
+	s.Router.Get("/"+adminPath+"/server/security/tokens", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityTokens))
+
+	// Users management (if multi-user enabled)
+	s.Router.Get("/"+adminPath+"/server/users", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUsers))
+
+	// Share endpoints (public)
 	s.Router.Get("/share/{code}", s.Handler.GetShare)
 	s.Router.Get("/s/{code}", s.Handler.GetShare)
 	s.Router.Get("/share/{code}.png", s.ImageHandler.GetSharePNG)
@@ -150,21 +247,28 @@ func (s *Server) setupRoutes() {
 	s.Router.Get("/share/{code}.svg", s.ImageHandler.GetShareSVG)
 	s.Router.Get("/s/{code}.svg", s.ImageHandler.GetShareSVG)
 
-	// OpenAPI/Swagger UI and specification
+	// Swagger/OpenAPI
 	s.Router.Get("/openapi", swagger.Handler)
 	s.Router.Get("/openapi.json", swagger.SpecHandler)
 
-	// GraphQL API and GraphiQL interface
+	// GraphQL
 	s.Router.Get("/graphql", graphql.Handler)
 	s.Router.Post("/graphql/query", graphql.QueryHandler)
 
-	if s.Mode.ShouldEnableDebugEndpoints() {
-		s.Router.Mount("/debug", middleware.Profiler())
-	}
+	// Metrics endpoint (Prometheus format)
+	s.Router.Get("/metrics", s.handleMetrics)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "web/templates/index.html")
+	// Read embedded template
+	data, err := templateFS.ReadFile("template/index.html")
+	if err != nil {
+		http.Error(w, "Template not found", http.StatusInternalServerError)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +278,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	hours := int(uptime.Hours()) % 24
 	minutes := int(uptime.Minutes()) % 60
 	uptimeStr := fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	if days == 0 {
+		if hours == 0 {
+			uptimeStr = fmt.Sprintf("%dm", minutes)
+		} else {
+			uptimeStr = fmt.Sprintf("%dh %dm", hours, minutes)
+		}
+	}
 
 	// Get hostname
 	hostname, _ := os.Hostname()
@@ -181,7 +292,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		hostname = "unknown"
 	}
 
-	// Health response per PART 16 spec
+	// Health response per PART 13 spec
 	response := map[string]interface{}{
 		"status":    "healthy",
 		"version":   s.version,
@@ -202,10 +313,78 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.MarshalIndent(response, "", "  ")
-	w.Write(data)
-	w.Write([]byte("\n"))
+	// Content negotiation per PART 13
+	accept := r.Header.Get("Accept")
+	
+	// Check for .json or .txt extension
+	if r.URL.Path == "/healthz.json" || r.URL.Path == "/api/v1/healthz.json" {
+		accept = "application/json"
+	} else if r.URL.Path == "/healthz.txt" || r.URL.Path == "/api/v1/healthz.txt" {
+		accept = "text/plain"
+	}
+
+	// /api/v1/healthz always returns JSON
+	if r.URL.Path == "/api/v1/healthz" && accept == "" {
+		accept = "application/json"
+	}
+
+	// Determine format based on Accept header
+	switch {
+	case accept == "text/plain" || accept == "text/*":
+		// Plain text format
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, "status: %s\n", response["status"])
+		fmt.Fprintf(w, "version: %s\n", response["version"])
+		fmt.Fprintf(w, "mode: %s\n", response["mode"])
+		fmt.Fprintf(w, "uptime: %s\n", response["uptime"])
+		checks := response["checks"].(map[string]string)
+		fmt.Fprintf(w, "database: %s\n", checks["database"])
+		fmt.Fprintf(w, "cache: %s\n", checks["cache"])
+		fmt.Fprintf(w, "disk: %s\n", checks["disk"])
+
+	case accept == "application/json" || accept == "application/*":
+		// JSON format
+		w.Header().Set("Content-Type", "application/json")
+		data, _ := json.MarshalIndent(response, "", "  ")
+		w.Write(data)
+		w.Write([]byte("\n"))
+
+	default:
+		// HTML format (default for browsers)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Status - casspeed</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        h1 { color: #333; }
+        .status-healthy { color: #28a745; font-weight: bold; font-size: 24px; }
+        .info { margin: 20px 0; }
+        .info dt { font-weight: bold; margin-top: 10px; }
+        .info dd { margin-left: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Health Status</h1>
+    <p class="status-healthy">✓ %s</p>
+    <dl class="info">
+        <dt>Version:</dt><dd>%s</dd>
+        <dt>Mode:</dt><dd>%s</dd>
+        <dt>Uptime:</dt><dd>%s</dd>
+        <dt>Node:</dt><dd>%s</dd>
+        <dt>Database:</dt><dd>%s</dd>
+        <dt>Disk:</dt><dd>%s</dd>
+    </dl>
+    <p><a href="/">← Back to Home</a></p>
+</body>
+</html>`, response["status"], response["version"], response["mode"], 
+			response["uptime"], hostname, 
+			response["checks"].(map[string]string)["database"],
+			response["checks"].(map[string]string)["disk"])
+	}
 }
 
 func (s *Server) handleAPIRoot(w http.ResponseWriter, r *http.Request) {
@@ -217,6 +396,53 @@ func (s *Server) handleAPIRoot(w http.ResponseWriter, r *http.Request) {
 	data, _ := json.MarshalIndent(response, "", "  ")
 	w.Write(data)
 	w.Write([]byte("\n"))
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	m := metrics.GetMetrics()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(m.Export()))
+}
+
+// handleRobotsTxt serves robots.txt per PART 11
+func (s *Server) handleRobotsTxt(w http.ResponseWriter, r *http.Request) {
+	adminPath := s.Config.Server.AdminPath
+	if adminPath == "" {
+		adminPath = "admin"
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, `# casspeed robots.txt
+User-agent: *
+Allow: /
+Allow: /api
+Disallow: /%s
+`, adminPath)
+}
+
+// handleSecurityTxt serves security.txt per PART 11 (RFC 9116)
+func (s *Server) handleSecurityTxt(w http.ResponseWriter, r *http.Request) {
+	// Get FQDN from config or use default
+	fqdn := s.Config.Server.FQDN
+	if fqdn == "" {
+		fqdn = "localhost"
+	}
+
+	// Calculate expiry (1 year from now)
+	expiry := time.Now().AddDate(1, 0, 0).Format("2006-01-02T15:04:05Z")
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, `# casspeed security.txt (RFC 9116)
+Contact: mailto:security@%s
+Expires: %s
+Preferred-Languages: en
+`, fqdn, expiry)
+}
+
+// handleChangePassword redirects to password change page per PART 11
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	// Redirect to auth password change page
+	http.Redirect(w, r, "/auth/password/reset", http.StatusFound)
 }
 
 func (s *Server) Start(address string, port int) error {
@@ -333,4 +559,26 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// securityHeaders adds security headers per PART 11 specification
+func securityHeaders(sslEnabled bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Required security headers (PART 11 - NON-NEGOTIABLE)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("X-XSS-Protection", "1; mode=block")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'")
+			w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+			// HSTS when SSL is enabled
+			if sslEnabled {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }

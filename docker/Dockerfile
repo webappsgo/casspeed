@@ -63,7 +63,12 @@ RUN apk add --no-cache \
     tor
 
 # Create directories with proper structure
-RUN mkdir -p /config /config/security /data/db /data/logs /data/tor /data/backup
+# Binary dirs: /config/casspeed/, /data/casspeed/
+# Service dirs created as needed by docker-compose volumes
+RUN mkdir -p /config/casspeed /config/casspeed/security /config/casspeed/tor \
+             /data/casspeed /data/tor \
+             /data/log/casspeed /data/backups/casspeed && \
+    chown -R root:root /config /data
 
 # Copy binary from builder stage (multi-stage build)
 COPY --from=builder /build/binary/casspeed /usr/local/bin/casspeed
@@ -71,6 +76,9 @@ COPY --from=builder /build/binary/casspeed /usr/local/bin/casspeed
 # Copy BUILD-TIME overlay (entrypoint.sh) from docker/rootfs/ into image
 # Note: This is docker/rootfs/ (build context), NOT runtime ./rootfs/ volumes
 COPY docker/rootfs/ /
+
+# Copy Dockerfile to image (for reference and backup)
+COPY docker/Dockerfile /root/Dockerfile
 
 # Make all binaries/scripts in /usr/local/bin executable (755)
 RUN chmod 755 /usr/local/bin/*

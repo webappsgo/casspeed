@@ -23,6 +23,7 @@ type ServerConfig struct {
 	FQDN      string      `yaml:"fqdn"`
 	Address   string      `yaml:"address"`
 	Mode      string      `yaml:"mode"` // production or development
+	AdminPath string      `yaml:"admin_path"` // Admin panel path (default: "admin")
 	Branding  Branding    `yaml:"branding"`
 	SEO       SEO         `yaml:"seo"`
 	User      string      `yaml:"user"`
@@ -160,6 +161,7 @@ func Default() *Config {
 			FQDN:      hostname,
 			Address:   "[::]",
 			Mode:      "production",
+			AdminPath: "admin", // Default admin path (PART 17)
 			Branding: Branding{
 				Title:       "casspeed",
 				Tagline:     "",

@@ -1,6 +1,8 @@
-## 👋 Welcome to casspeed 🚀
+# casspeed
 
 A free self-hosted alternative to speedtest.net with all the features but free and opensource with no ads, tracking, and no feature gating.
+
+[![Documentation](https://readthedocs.org/projects/casapps-casspeed/badge/?version=latest)](https://casapps-casspeed.readthedocs.io)
 
 ## Features
 
@@ -19,48 +21,39 @@ A free self-hosted alternative to speedtest.net with all the features but free a
 
 ```bash
 docker-compose up -d
-open http://localhost:64580
 ```
 
-### Build from Source
+Visit `http://localhost:64580` to access the web interface.
+
+### Binary
+
+Download from releases and run:
+
+```bash
+./casspeed
+```
+
+Default port: 64580 (random port per spec)
+
+## CLI Client
+
+```bash
+casspeed-cli                  # Launch TUI mode
+casspeed-cli --server URL     # Connect to custom server
+```
+
+## Documentation
+
+Full documentation available at [https://casapps-casspeed.readthedocs.io](https://casapps-casspeed.readthedocs.io)
+
+## Building from Source
 
 ```bash
 make build
-./bin/casspeed
 ```
 
-### CLI Client
+Requires Docker (all builds use `golang:alpine` container).
 
-```bash
-casspeed-cli --token YOUR_TOKEN
-casspeed-cli --graph 2025-12-01:2025-12-31
-```
+## License
 
-## API Endpoints
-
-- `GET /` - Web UI
-- `POST /api/v1/speedtest/start` - Start test
-- `GET /api/v1/speedtest/ws` - WebSocket progress
-- `GET /share/{code}` - View shared result
-- `GET /share/{code}.png` - PNG image
-- `GET /share/{code}.svg` - SVG image
-
-## Configuration
-
-Configuration file: `server.yml` (auto-created on first run)
-
-```yaml
-server:
-  port: 64580
-  mode: production
-
-test:
-  max_concurrent: 3
-  default_duration: 10
-  max_threads: 16
-```
-
-## Author
-
-🤖 casjay: [Github](https://github.com/casjay) 🤖
-
+MIT License - see LICENSE.md for details.

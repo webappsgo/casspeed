@@ -2,7 +2,7 @@ name: casspeed-test
 
 services:
   casspeed:
-    image: ghcr.io/casapps/casspeed:latest
+    image: casspeed:test
     container_name: casspeed-test
     restart: "no"
     environment:
@@ -10,7 +10,7 @@ services:
       - DEBUG=true
       - TZ=America/New_York
     ports:
-      - "64581:80"
+      - "64580:80"
     volumes:
       # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
       # NEVER run from project directory - always use temp dir workflow

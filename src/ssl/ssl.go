@@ -117,7 +117,7 @@ func (m *Manager) validateCertPaths(certPath, keyPath, source string) *CertInfo 
 	leaf := cert.Leaf
 	if leaf == nil {
 		// Parse if not already done
-		parsed, err := tls.X509KeyPair(certPath, keyPath)
+		parsed, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil || len(parsed.Certificate) == 0 {
 			return nil
 		}

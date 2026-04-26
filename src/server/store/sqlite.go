@@ -130,6 +130,12 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_admin ON admin_sessions(admin_id);
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL,
+	updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
 `
 
 	_, err := s.db.Exec(schema)
@@ -556,4 +562,37 @@ func (s *SQLiteStore) DeleteAdminSession(ctx context.Context, id string) error {
 func (s *SQLiteStore) DeleteExpiredAdminSessions(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM admin_sessions WHERE expires_at < strftime('%s', 'now')`)
 	return err
+}
+
+func (s *SQLiteStore) CountAdmins(ctx context.Context) (int, error) {
+var count int
+query := `SELECT COUNT(*) FROM admins`
+err := s.db.QueryRowContext(ctx, query).Scan(&count)
+return count, err
+}
+
+func (s *SQLiteStore) GetSetupComplete(ctx context.Context) (bool, error) {
+var value string
+query := `SELECT value FROM system_settings WHERE key = 'setup_complete' LIMIT 1`
+err := s.db.QueryRowContext(ctx, query).Scan(&value)
+
+if err == sql.ErrNoRows {
+return false, nil
+}
+if err != nil {
+return false, err
+}
+
+return value == "true" || value == "1", nil
+}
+
+func (s *SQLiteStore) SetSetupComplete(ctx context.Context, complete bool) error {
+value := "false"
+if complete {
+value = "true"
+}
+
+query := `INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES ('setup_complete', ?, strftime('%s', 'now'))`
+_, err := s.db.ExecContext(ctx, query, value)
+return err
 }

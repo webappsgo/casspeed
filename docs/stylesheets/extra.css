@@ -1,0 +1,37 @@
+/* CasSpeed Documentation Theme Customization */
+/* Matches project theme (light/dark/auto, dark default) */
+
+:root {
+  --primary-color: #2196f3;
+  --accent-color: #ff9800;
+}
+
+[data-md-color-scheme="default"] {
+  /* Light theme adjustments */
+  --md-primary-fg-color: var(--primary-color);
+  --md-accent-fg-color: var(--accent-color);
+}
+
+[data-md-color-scheme="slate"] {
+  /* Dark theme (default) adjustments */
+  --md-primary-fg-color: var(--primary-color);
+  --md-accent-fg-color: var(--accent-color);
+}
+
+/* Code blocks */
+.highlight {
+  border-radius: 4px;
+}
+
+/* Tables */
+table {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 76.1875em) {
+  .md-sidebar {
+    font-size: 0.8rem;
+  }
+}

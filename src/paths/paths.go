@@ -12,16 +12,17 @@ import (
 type Paths struct {
 	Config   string // Configuration directory
 	Data     string // Data directory
+	Cache    string // Cache directory
 	Log      string // Log directory
-	DB       string // Database directory
 	Backup   string // Backup directory
+	DB       string // Database directory
 	PID      string // PID file path
 	SSL      string // SSL certificates directory
 	Security string // Security databases directory (GeoIP, etc.)
 }
 
 // Detect automatically determines appropriate paths for current OS and privilege level
-func Detect(configOverride, dataOverride, logOverride string) (*Paths, error) {
+func Detect(configOverride, dataOverride, cacheOverride, logOverride, backupOverride string) (*Paths, error) {
 	isRoot := isRunningAsRoot()
 	isContainer := isRunningInContainer()
 
@@ -71,10 +72,15 @@ func Detect(configOverride, dataOverride, logOverride string) (*Paths, error) {
 	if dataOverride != "" {
 		paths.Data = dataOverride
 		paths.DB = filepath.Join(dataOverride, "db")
-		paths.Backup = filepath.Join(dataOverride, "backup")
+	}
+	if cacheOverride != "" {
+		paths.Cache = cacheOverride
 	}
 	if logOverride != "" {
 		paths.Log = logOverride
+	}
+	if backupOverride != "" {
+		paths.Backup = backupOverride
 	}
 
 	return paths, err
@@ -85,6 +91,7 @@ func (p *Paths) Ensure() error {
 	dirs := []string{
 		p.Config,
 		p.Data,
+		p.Cache,
 		p.Log,
 		p.DB,
 		p.Backup,
@@ -141,9 +148,10 @@ func linuxPrivilegedPaths() *Paths {
 	return &Paths{
 		Config:   "/etc/casapps/casspeed",
 		Data:     "/var/lib/casapps/casspeed",
+		Cache:    "/var/cache/casapps/casspeed",
 		Log:      "/var/log/casapps/casspeed",
-		DB:       "/var/lib/casapps/casspeed/db",
 		Backup:   "/var/backups/casapps/casspeed",
+		DB:       "/var/lib/casapps/casspeed/db",
 		PID:      "/var/run/casapps/casspeed.pid",
 		SSL:      "/etc/casapps/casspeed/ssl",
 		Security: "/etc/casapps/casspeed/security",
@@ -156,9 +164,10 @@ func linuxUserPaths() *Paths {
 	return &Paths{
 		Config:   filepath.Join(home, ".config/casapps/casspeed"),
 		Data:     filepath.Join(home, ".local/share/casapps/casspeed"),
+		Cache:    filepath.Join(home, ".cache/casapps/casspeed"),
 		Log:      filepath.Join(home, ".local/share/casapps/casspeed/logs"),
-		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		Backup:   filepath.Join(home, ".local/backups/casapps/casspeed"),
+		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		PID:      filepath.Join(home, ".local/share/casapps/casspeed/casspeed.pid"),
 		SSL:      filepath.Join(home, ".config/casapps/casspeed/ssl"),
 		Security: filepath.Join(home, ".config/casapps/casspeed/security"),
@@ -170,9 +179,10 @@ func darwinPrivilegedPaths() *Paths {
 	return &Paths{
 		Config:   "/usr/local/etc/casapps/casspeed",
 		Data:     "/usr/local/var/casapps/casspeed",
+		Cache:    "/var/cache/casapps/casspeed",
 		Log:      "/var/log/casapps/casspeed",
-		DB:       "/usr/local/var/casapps/casspeed/db",
 		Backup:   "/var/backups/casapps/casspeed",
+		DB:       "/usr/local/var/casapps/casspeed/db",
 		PID:      "/var/run/casapps/casspeed.pid",
 		SSL:      "/usr/local/etc/casapps/casspeed/ssl",
 		Security: "/usr/local/etc/casapps/casspeed/security",
@@ -185,9 +195,10 @@ func darwinUserPaths() *Paths {
 	return &Paths{
 		Config:   filepath.Join(home, ".config/casapps/casspeed"),
 		Data:     filepath.Join(home, ".local/share/casapps/casspeed"),
+		Cache:    filepath.Join(home, ".cache/casapps/casspeed"),
 		Log:      filepath.Join(home, ".local/share/casapps/casspeed/logs"),
-		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		Backup:   filepath.Join(home, ".local/backups/casapps/casspeed"),
+		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		PID:      filepath.Join(home, ".local/share/casapps/casspeed/casspeed.pid"),
 		SSL:      filepath.Join(home, ".config/casapps/casspeed/ssl"),
 		Security: filepath.Join(home, ".config/casapps/casspeed/security"),
@@ -199,9 +210,10 @@ func bsdPrivilegedPaths() *Paths {
 	return &Paths{
 		Config:   "/usr/local/etc/casapps/casspeed",
 		Data:     "/var/db/casapps/casspeed",
+		Cache:    "/var/cache/casapps/casspeed",
 		Log:      "/var/log/casapps/casspeed",
-		DB:       "/var/db/casapps/casspeed/db",
 		Backup:   "/var/backups/casapps/casspeed",
+		DB:       "/var/db/casapps/casspeed/db",
 		PID:      "/var/run/casapps/casspeed.pid",
 		SSL:      "/usr/local/etc/casapps/casspeed/ssl",
 		Security: "/usr/local/etc/casapps/casspeed/security",
@@ -214,9 +226,10 @@ func bsdUserPaths() *Paths {
 	return &Paths{
 		Config:   filepath.Join(home, ".config/casapps/casspeed"),
 		Data:     filepath.Join(home, ".local/share/casapps/casspeed"),
+		Cache:    filepath.Join(home, ".cache/casapps/casspeed"),
 		Log:      filepath.Join(home, ".local/share/casapps/casspeed/logs"),
-		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		Backup:   filepath.Join(home, ".local/backups/casapps/casspeed"),
+		DB:       filepath.Join(home, ".local/share/casapps/casspeed/db"),
 		PID:      filepath.Join(home, ".local/share/casapps/casspeed/casspeed.pid"),
 		SSL:      filepath.Join(home, ".config/casapps/casspeed/ssl"),
 		Security: filepath.Join(home, ".config/casapps/casspeed/security"),
@@ -232,9 +245,10 @@ func windowsPrivilegedPaths() *Paths {
 	return &Paths{
 		Config:   filepath.Join(programData, "casapps\\casspeed"),
 		Data:     filepath.Join(programData, "casapps\\casspeed\\data"),
+		Cache:    filepath.Join(programData, "casapps\\casspeed\\cache"),
 		Log:      filepath.Join(programData, "casapps\\casspeed\\logs"),
-		DB:       filepath.Join(programData, "casapps\\casspeed\\db"),
 		Backup:   filepath.Join(programData, "Backups\\casapps\\casspeed"),
+		DB:       filepath.Join(programData, "casapps\\casspeed\\db"),
 		PID:      filepath.Join(programData, "casapps\\casspeed\\casspeed.pid"),
 		SSL:      filepath.Join(programData, "casapps\\casspeed\\ssl"),
 		Security: filepath.Join(programData, "casapps\\casspeed\\security"),
@@ -256,9 +270,10 @@ func windowsUserPaths() *Paths {
 	return &Paths{
 		Config:   filepath.Join(appData, "casapps\\casspeed"),
 		Data:     filepath.Join(localAppData, "casapps\\casspeed"),
+		Cache:    filepath.Join(localAppData, "casapps\\casspeed\\cache"),
 		Log:      filepath.Join(localAppData, "casapps\\casspeed\\logs"),
-		DB:       filepath.Join(localAppData, "casapps\\casspeed\\db"),
 		Backup:   filepath.Join(localAppData, "Backups\\casapps\\casspeed"),
+		DB:       filepath.Join(localAppData, "casapps\\casspeed\\db"),
 		PID:      filepath.Join(localAppData, "casapps\\casspeed\\casspeed.pid"),
 		SSL:      filepath.Join(appData, "casapps\\casspeed\\ssl"),
 		Security: filepath.Join(appData, "casapps\\casspeed\\security"),
@@ -270,9 +285,10 @@ func containerPaths() *Paths {
 	return &Paths{
 		Config:   "/config",
 		Data:     "/data",
+		Cache:    "/data/cache",
 		Log:      "/data/logs",
-		DB:       "/data/db",
 		Backup:   "/data/backup",
+		DB:       "/data/db",
 		PID:      "/data/casspeed.pid",
 		SSL:      "/config/ssl",
 		Security: "/config/security",

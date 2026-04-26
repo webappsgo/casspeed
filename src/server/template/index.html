@@ -1,0 +1,78 @@
+<!DOCTYPEhtml>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>casspeed - Speed Testing</title>
+  <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>casspeed</h1>
+    <p class="tagline">Self-hosted Speed Testing</p>
+    
+    <button class="test-btn" id="startBtn">START</button>
+    
+    <div class="progress" id="progress">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <p class="status" id="status">Initializing...</p>
+    </div>
+    
+    <div class="results" id="results">
+      <div class="result-item">
+        <span class="result-label">Download</span>
+        <span class="result-value" id="download">-- Mbps</span>
+      </div>
+      <div class="result-item">
+        <span class="result-label">Upload</span>
+        <span class="result-value" id="upload">-- Mbps</span>
+      </div>
+      <div class="result-item">
+        <span class="result-label">Ping</span>
+        <span class="result-value" id="ping">-- ms</span>
+      </div>
+      <div class="result-item">
+        <span class="result-label">Jitter</span>
+        <span class="result-value" id="jitter">-- ms</span>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let ws = null;
+    function startTest() {
+      const btn = document.getElementById('startBtn');
+      const progress = document.getElementById('progress');
+      const results = document.getElementById('results');
+      btn.disabled = true;
+      progress.style.display = 'block';
+      results.style.display = 'none';
+      ws = new WebSocket('ws://' + window.location.host + '/api/v1/speedtest/ws');
+      ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        if (data.phase) {
+          document.getElementById('status').textContent = data.phase + '...';
+          document.getElementById('progressFill').style.width = data.progress + '%';
+        }
+        if (data.complete) {
+          progress.style.display = 'none';
+          results.style.display = 'block';
+          document.getElementById('download').textContent = data.download_mbps.toFixed(2) + ' Mbps';
+          document.getElementById('upload').textContent = data.upload_mbps.toFixed(2) + ' Mbps';
+          document.getElementById('ping').textContent = data.ping_ms.toFixed(1) + ' ms';
+          document.getElementById('jitter').textContent = data.jitter_ms.toFixed(1) + ' ms';
+          btn.disabled = false;
+        }
+      };
+      ws.onerror = function() {
+        document.getElementById('status').textContent = 'Connection error';
+        btn.disabled = false;
+      };
+    }
+    document.getElementById('startBtn').addEventListener('click', startTest);
+  </script>
+</body>
+</html>

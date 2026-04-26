@@ -1,0 +1,38 @@
+<!DOCTYPEhtml>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - casspeed</title>
+  <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/admin/style.css">
+</head>
+<body>
+  <div class="admin-container">
+    <nav>
+      <a href="/admin/dashboard">Dashboard</a>
+      <a href="/admin/server/settings">Settings</a>
+      <a href="/admin/server/info">Info</a>
+      <a href="/admin/server/logs">Logs</a>
+      <a href="/admin/logout">Logout</a>
+    </nav>
+    
+    <h1>Admin Dashboard</h1>
+    
+    <div class="card">
+      <h2>System Status</h2>
+      <p>Server: Running</p>
+      <p>Uptime: {{.Uptime}}</p>
+      <p>Version: {{.Version}}</p>
+    </div>
+    
+    <div class="card">
+      <h2>Quick Stats</h2>
+      <p>Total Tests: {{.TotalTests}}</p>
+      <p>Users: {{.TotalUsers}}</p>
+      <p>Devices: {{.TotalDevices}}</p>
+    </div>
+  </div>
+</body>
+</html>

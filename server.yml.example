@@ -1,0 +1,75 @@
+# casspeed Server Configuration
+# This file is auto-generated on first run if it doesn't exist
+
+server:
+  # Server address and port
+  # address: "[::]"  # IPv6 all interfaces (default)
+  # port: 64580      # Random port in 64xxx range (default: auto-assigned)
+  
+  # FQDN for URL generation
+  fqdn: "localhost"
+  
+  # Mode: production or development
+  mode: "production"
+  
+  # Admin configuration
+  admin:
+    email: "admin@localhost"
+  
+  # SSL/TLS configuration
+  ssl:
+    enabled: false
+    # cert: "/path/to/cert.pem"
+    # key: "/path/to/key.pem"
+    min_version: "TLS1.2"
+    
+    letsencrypt:
+      enabled: false
+      # email: "admin@example.com"
+      challenge: "http-01"
+      staging: false
+  
+  # Scheduler configuration
+  scheduler:
+    enabled: true
+    tasks:
+      backup:
+        schedule: "0 2 * * *"  # 02:00 daily
+        enabled: true
+      ssl_renewal:
+        schedule: "0 3 * * *"  # 03:00 daily
+        enabled: true
+      session_cleanup:
+        schedule: "0 * * * *"  # Hourly
+        enabled: true
+  
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+  
+  # Database configuration
+  database:
+    type: "sqlite"  # sqlite, postgres, mysql
+    # For SQLite (default):
+    # path: "{data_dir}/db/server.db"
+    # For PostgreSQL/MySQL (cluster):
+    # host: "localhost"
+    # port: 5432
+    # name: "casspeed"
+    # user: "casspeed"
+    # password: "secret"
+
+# Web configuration
+web:
+  branding:
+    title: "casspeed"
+    tagline: "Self-hosted Speed Testing"
+  
+  security:
+    contact: "security@localhost"
+
+# Speed test configuration  
+test:
+  max_threads: 8
+  chunk_size: 1048576  # 1MB chunks

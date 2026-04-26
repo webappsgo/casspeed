@@ -164,7 +164,8 @@ test:
 # =============================================================================
 dev:
 	@mkdir -p $(GOCACHE) $(GOMODCACHE)
-	@BUILD_DIR=$$(mktemp -d "$${TMPDIR:-/tmp}/$(PROJECTORG).XXXXXX") && \
+	@mkdir -p "$${TMPDIR:-/tmp}/$(PROJECTORG)"
+	@BUILD_DIR=$$(mktemp -d "$${TMPDIR:-/tmp}/$(PROJECTORG)/$(PROJECTNAME)-XXXXXX") && \
 		echo "Quick dev build..." && \
 		$(GO_DOCKER) go build -o $$BUILD_DIR/$(PROJECTNAME) ./src && \
 		echo "Built: $$BUILD_DIR/$(PROJECTNAME)" && \

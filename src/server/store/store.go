@@ -50,6 +50,7 @@ type Store interface {
 	UpdateAdminLastLogin(ctx context.Context, adminID int) error
 	UpdateAdminFailedAttempts(ctx context.Context, adminID int, attempts int) error
 	LockAdmin(ctx context.Context, adminID int, until time.Time) error
+	CountAdmins(ctx context.Context) (int, error)
 
 	// Admin session methods
 	CreateAdminSession(ctx context.Context, session *model.AdminSession) error
@@ -57,4 +58,8 @@ type Store interface {
 	UpdateAdminSessionActivity(ctx context.Context, id string) error
 	DeleteAdminSession(ctx context.Context, id string) error
 	DeleteExpiredAdminSessions(ctx context.Context) error
+	
+	// Setup status
+	GetSetupComplete(ctx context.Context) (bool, error)
+	SetSetupComplete(ctx context.Context, complete bool) error
 }

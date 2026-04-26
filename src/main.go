@@ -1,16 +1,24 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
+	"github.com/casapps/casspeed/src/admin"
+	"github.com/casapps/casspeed/src/backup"
 	"github.com/casapps/casspeed/src/config"
 	"github.com/casapps/casspeed/src/mode"
 	"github.com/casapps/casspeed/src/paths"
+	"github.com/casapps/casspeed/src/pid"
 	"github.com/casapps/casspeed/src/server"
+	"github.com/casapps/casspeed/src/update"
 )
 
 // Version information (set by linker flags during build)
@@ -34,7 +42,9 @@ func main() {
 		debugFlag   string
 		configDir   string
 		dataDir     string
+		cacheDir    string
 		logDir      string
+		backupDir   string
 		pidFile     string
 		address     string
 		portFlag    string
@@ -53,7 +63,9 @@ func main() {
 	flag.StringVar(&debugFlag, "debug", "", "Enable debug mode")
 	flag.StringVar(&configDir, "config", "", "Configuration directory")
 	flag.StringVar(&dataDir, "data", "", "Data directory")
+	flag.StringVar(&cacheDir, "cache", "", "Cache directory")
 	flag.StringVar(&logDir, "log", "", "Log directory")
+	flag.StringVar(&backupDir, "backup", "", "Backup directory")
 	flag.StringVar(&pidFile, "pid", "", "PID file path")
 	flag.StringVar(&address, "address", "", "Listen address")
 	flag.StringVar(&portFlag, "port", "", "Listen port")
@@ -118,7 +130,7 @@ func main() {
 	}
 
 	// Detect paths
-	appPaths, err := paths.Detect(configDir, dataDir, logDir)
+	appPaths, err := paths.Detect(configDir, dataDir, cacheDir, logDir, backupDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error detecting paths: %v\n", err)
 		os.Exit(1)
@@ -170,6 +182,23 @@ func main() {
 	// Print startup banner
 	printBanner(appMode, cfg)
 
+	// Write PID file
+	if err := pid.WritePIDFile(appPaths.PID); err != nil {
+		fmt.Fprintf(os.Stderr, "PID file error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+
+	// Remove PID file on exit
+	defer func() {
+		if err := pid.RemovePIDFile(appPaths.PID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Could not remove PID file: %v\n", err)
+		}
+	}()
+
 	// Determine listen address and port
 	listenAddr := cfg.Server.Address
 	if listenAddr == "" {
@@ -189,10 +218,20 @@ func main() {
 	}
 
 	// Create and start server
-	srv, err := server.New(cfg, appMode, appPaths.Data, Version)
+	srv, err := server.New(cfg, appMode, appPaths.Data, appPaths.Log, Version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server initialization error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Check if setup is complete, if not generate and display setup token
+	if !admin.IsSetupComplete() {
+		setupToken, err := admin.GenerateSetupToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating setup token: %v\n", err)
+			os.Exit(1)
+		}
+		printSetupInstructions(listenAddr, listenPort, setupToken)
 	}
 
 	if err := srv.Start(listenAddr, listenPort); err != nil && err != http.ErrServerClosed {
@@ -214,8 +253,10 @@ OPTIONS:
   --debug                 Enable debug mode (verbose logging, debug endpoints)
   --daemon                Daemonize (detach from terminal)
   --config DIR            Configuration directory
-  --data DIR              Data directory  
+  --data DIR              Data directory
+  --cache DIR             Cache directory
   --log DIR               Log directory
+  --backup DIR            Backup directory
   --pid FILE              PID file path
   --address ADDR          Listen address (default: [::])
   --port PORT             Listen port (default: random 64xxx)
@@ -365,22 +406,95 @@ Manual service management is for advanced users only.
 func handleMaintenance(binaryName string, cmd string, args []string) {
 	fmt.Printf("%s: Maintenance Operations\n", binaryName)
 	fmt.Println("─────────────────────────────────────")
-	
+
+	// Detect paths for backup operations
+	appPaths, err := paths.Detect("", "", "", "", "")
+	if err != nil {
+		fmt.Printf("Error detecting paths: %v\n", err)
+		os.Exit(1)
+	}
+
 	switch cmd {
 	case "backup":
-		fmt.Println("Database backup:")
-		fmt.Println("Default DB: /var/lib/casapps/casspeed/db/speedtest.db")
-		fmt.Println("Backup command: cp speedtest.db speedtest.db.backup")
-		fmt.Println("Or use sqlite3 .backup command for consistency")
+		fmt.Println("Creating encrypted backup...")
+
+		// Get or generate encryption key
+		encKey := os.Getenv("CASSPEED_BACKUP_KEY")
+		if encKey == "" {
+			// Generate a new key and show it to user
+			keyBytes := make([]byte, 32)
+			if _, err := rand.Read(keyBytes); err != nil {
+				fmt.Printf("Error generating key: %v\n", err)
+				os.Exit(1)
+			}
+			encKey = hex.EncodeToString(keyBytes)
+			fmt.Printf("\n⚠️  Generated new encryption key (save this!):\n")
+			fmt.Printf("   CASSPEED_BACKUP_KEY=%s\n\n", encKey)
+		}
+
+		// Decode hex key to bytes
+		keyBytes, err := hex.DecodeString(encKey)
+		if err != nil || len(keyBytes) != 32 {
+			fmt.Println("Error: CASSPEED_BACKUP_KEY must be 64 hex characters (32 bytes)")
+			os.Exit(1)
+		}
+
+		backupSvc := backup.NewService(&backup.Config{
+			Enabled:       true,
+			BackupDir:     appPaths.Backup,
+			MaxBackups:    4,
+			EncryptionKey: string(keyBytes),
+		})
+
+		backupFile, err := backupSvc.CreateBackup(appPaths.Data)
+		if err != nil {
+			fmt.Printf("Backup failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("✅ Backup created: %s\n", backupFile)
+
 	case "restore":
-		if len(args) > 0 {
-			fmt.Printf("Database restore from: %s\n", args[0])
-			fmt.Println("Restore command: cp backup.db speedtest.db")
-			fmt.Println("Warning: Stop the server before restoring")
-		} else {
+		if len(args) == 0 {
 			fmt.Println("Usage: --maintenance restore <backup-file>")
 			os.Exit(1)
 		}
+
+		backupFile := args[0]
+		if _, err := os.Stat(backupFile); os.IsNotExist(err) {
+			fmt.Printf("Backup file not found: %s\n", backupFile)
+			os.Exit(1)
+		}
+
+		encKey := os.Getenv("CASSPEED_BACKUP_KEY")
+		if encKey == "" {
+			fmt.Println("Error: CASSPEED_BACKUP_KEY environment variable required for restore")
+			os.Exit(1)
+		}
+
+		keyBytes, err := hex.DecodeString(encKey)
+		if err != nil || len(keyBytes) != 32 {
+			fmt.Println("Error: CASSPEED_BACKUP_KEY must be 64 hex characters (32 bytes)")
+			os.Exit(1)
+		}
+
+		fmt.Printf("Restoring from: %s\n", backupFile)
+		fmt.Println("⚠️  Warning: This will overwrite existing data!")
+
+		backupSvc := backup.NewService(&backup.Config{
+			Enabled:       true,
+			BackupDir:     appPaths.Backup,
+			MaxBackups:    4,
+			EncryptionKey: string(keyBytes),
+		})
+
+		if err := backupSvc.RestoreBackup(backupFile, appPaths.Data); err != nil {
+			fmt.Printf("Restore failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("✅ Restore completed successfully")
+
 	case "update":
 		fmt.Println("Server update:")
 		fmt.Println("1. Download latest binary from GitHub releases")
@@ -394,7 +508,7 @@ func handleMaintenance(binaryName string, cmd string, args []string) {
 			mode := args[0]
 			if mode == "production" || mode == "development" {
 				fmt.Printf("Set mode in config: server.mode: %s\n", mode)
-				fmt.Println("Or use environment: MODE=%s\n", mode)
+				fmt.Printf("Or use environment: MODE=%s\n", mode)
 				fmt.Printf("Or use CLI flag: %s --mode %s\n", binaryName, mode)
 			} else {
 				fmt.Println("Invalid mode. Use: production or development")
@@ -420,44 +534,119 @@ func handleMaintenance(binaryName string, cmd string, args []string) {
 func handleUpdate(binaryName string, cmd string, args []string) {
 	fmt.Printf("%s: Update System\n", binaryName)
 	fmt.Println("─────────────────────────────────────")
-	
+
+	updateSvc := update.NewService(&update.Config{
+		Enabled:    true,
+		RepoOwner:  "casapps",
+		RepoName:   "casspeed",
+		Branch:     "stable",
+		CurrentVer: Version,
+	})
+
 	switch cmd {
 	case "check":
 		fmt.Println("Checking for updates...")
 		fmt.Printf("Current version: %s\n", Version)
 		fmt.Println()
-		fmt.Println("Check GitHub releases:")
-		fmt.Println("https://github.com/casapps/casspeed/releases/latest")
+
+		release, err := updateSvc.CheckForUpdates()
+		if err != nil {
+			fmt.Printf("Error checking updates: %v\n", err)
+			fmt.Println()
+			fmt.Println("Manual check:")
+			fmt.Println("https://github.com/casapps/casspeed/releases/latest")
+			os.Exit(1)
+		}
+
+		if release.Version == Version || "v"+release.Version == Version {
+			fmt.Println("✅ You are running the latest version")
+		} else {
+			fmt.Printf("🆕 New version available: %s\n", release.Version)
+			fmt.Printf("   Download: %s\n", release.DownloadURL)
+			fmt.Println()
+			fmt.Printf("Run '%s --update yes' to update\n", binaryName)
+		}
+
 	case "yes":
-		fmt.Println("Update instructions:")
-		fmt.Println("1. Download latest binary from GitHub releases")
-		fmt.Println("2. Verify checksum (provided in release)")
-		fmt.Println("3. Stop casspeed: systemctl stop casspeed")
-		fmt.Println("4. Replace binary: cp casspeed-new /usr/local/bin/casspeed")
-		fmt.Println("5. Start casspeed: systemctl start casspeed")
-		fmt.Println()
-		fmt.Println("Docker: docker-compose pull && docker-compose up -d")
+		fmt.Println("Checking for updates...")
+		release, err := updateSvc.CheckForUpdates()
+		if err != nil {
+			fmt.Printf("Error checking updates: %v\n", err)
+			os.Exit(1)
+		}
+
+		if release.Version == Version || "v"+release.Version == Version {
+			fmt.Println("✅ Already running latest version")
+			return
+		}
+
+		fmt.Printf("Updating to version %s...\n", release.Version)
+		fmt.Println("⏳ Downloading...")
+
+		if err := updateSvc.PerformUpdate(release); err != nil {
+			fmt.Printf("Update failed: %v\n", err)
+			fmt.Println()
+			fmt.Println("Manual update instructions:")
+			fmt.Println("1. Download latest binary from GitHub releases")
+			fmt.Println("2. Stop casspeed: systemctl stop casspeed")
+			fmt.Println("3. Replace binary: cp casspeed-new /usr/local/bin/casspeed")
+			fmt.Println("4. Start casspeed: systemctl start casspeed")
+			os.Exit(1)
+		}
+
+		fmt.Println("✅ Update completed!")
+		fmt.Println("Restart the service to use the new version:")
+		fmt.Println("  systemctl restart casspeed")
+
 	case "branch":
 		if len(args) > 0 {
 			branch := args[0]
 			if branch == "stable" || branch == "beta" || branch == "daily" {
-				fmt.Printf("Branch switching:\n")
-				fmt.Println("Stable: Use tagged releases from GitHub")
-				fmt.Println("Beta: Use pre-release tags")
-				fmt.Println("Daily: Build from main branch")
+				updateSvc.SetBranch(branch)
+				fmt.Printf("Update branch set to: %s\n", branch)
 				fmt.Println()
-				fmt.Printf("Docker: ghcr.io/casapps/casspeed:%s\n", branch)
+				fmt.Printf("Docker users: ghcr.io/casapps/casspeed:%s\n", branch)
 			} else {
 				fmt.Printf("Invalid branch: %s (use: stable, beta, daily)\n", branch)
 				os.Exit(1)
 			}
 		} else {
+			fmt.Printf("Current branch: %s\n", updateSvc.GetBranch())
+			fmt.Println()
 			fmt.Println("Usage: --update branch <stable|beta|daily>")
-			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Unknown update command: %s\n", cmd)
 		fmt.Printf("Available: check, yes, branch <stable|beta|daily>\n")
 		os.Exit(1)
 	}
+}
+
+func printSetupInstructions(listenAddr string, listenPort int, setupToken string) {
+fmt.Println()
+fmt.Println("╔══════════════════════════════════════════════════════════════════════╗")
+fmt.Println("║                       FIRST-TIME SETUP REQUIRED                      ║")
+fmt.Println("╠══════════════════════════════════════════════════════════════════════╣")
+fmt.Println("║                                                                      ║")
+fmt.Println("║  🌐 Web Interface:                                                   ║")
+if listenAddr == "[::]" || listenAddr == "0.0.0.0" || listenAddr == "" {
+fmt.Printf("║      http://localhost:%d                                    ║\n", listenPort)
+} else {
+fmt.Printf("║      http://%s:%d                                    ║\n", listenAddr, listenPort)
+}
+fmt.Println("║                                                                      ║")
+fmt.Println("║  🔧 Admin Panel:                                                     ║")
+if listenAddr == "[::]" || listenAddr == "0.0.0.0" || listenAddr == "" {
+fmt.Printf("║      http://localhost:%d/admin                               ║\n", listenPort)
+} else {
+fmt.Printf("║      http://%s:%d/admin                               ║\n", listenAddr, listenPort)
+}
+fmt.Println("║                                                                      ║")
+fmt.Println("║  🔑 Setup Token (use at /admin):                                     ║")
+fmt.Printf("║      %-64s ║\n", setupToken)
+fmt.Println("║                                                                      ║")
+fmt.Println("║  ⚠️  Save the setup token! It will not be shown again.               ║")
+fmt.Println("║                                                                      ║")
+fmt.Println("╚══════════════════════════════════════════════════════════════════════╝")
+fmt.Println()
 }

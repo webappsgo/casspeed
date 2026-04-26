@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/casapps/casspeed/src/auth"
 	"github.com/casapps/casspeed/src/server/model"
 	"github.com/casapps/casspeed/src/server/store"
 	"github.com/go-chi/chi/v5"
-	"golang.org/x/crypto/argon2"
 )
 
 type UserHandler struct {
@@ -22,12 +22,6 @@ func NewUserHandler(st store.Store) *UserHandler {
 	}
 }
 
-func hashPassword(password string) string {
-	salt := make([]byte, 16)
-	rand.Read(salt)
-	hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
-	return hex.EncodeToString(salt) + "$" + hex.EncodeToString(hash)
-}
 
 func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -41,15 +35,36 @@ func (h *UserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate user ID and hash password
+	// Validate input
+	if err := auth.ValidateUsername(req.Username); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := auth.ValidateEmail(req.Email); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Generate user ID
 	userID := make([]byte, 16)
 	rand.Read(userID)
+	
+	// Hash password using auth package
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
 	
 	user := &model.User{
 		ID:           hex.EncodeToString(userID),
 		Username:     req.Username,
 		Email:        req.Email,
-		PasswordHash: hashPassword(req.Password),
+		PasswordHash: passwordHash,
 	}
 
 	if err := h.store.CreateUser(r.Context(), user); err != nil {
@@ -175,10 +190,20 @@ func (h *UserHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Generate token: 16 bytes (128 bits) = 32 hex chars
+	tokenBytes := make([]byte, 16)
+	rand.Read(tokenBytes)
+	tokenID := hex.EncodeToString(tokenBytes)
+	
+	// Generate actual token with key_ prefix per PART 17
+	actualTokenBytes := make([]byte, 32)
+	rand.Read(actualTokenBytes)
+	actualToken := "key_" + hex.EncodeToString(actualTokenBytes)
+
 	token := &model.APIToken{
-		ID:     "token-" + req.Name, // Placeholder
+		ID:     tokenID,
 		UserID: userID,
-		Token:  "tok_" + req.Name, // Placeholder
+		Token:  actualToken, // key_ prefix per spec
 		Name:   req.Name,
 	}
 

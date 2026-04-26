@@ -2,52 +2,19 @@ package graphql
 
 import (
 	"net/http"
-	"strings"
+
+	"github.com/casapps/casspeed/src/theme"
 )
 
-// Theme represents a UI theme
-type Theme string
-
-const (
-	ThemeLight Theme = "light"
-	ThemeDark  Theme = "dark"
-	ThemeAuto  Theme = "auto"
-)
-
-// DetectTheme detects theme from request
-func DetectTheme(r *http.Request) Theme {
-	// Check query parameter
-	if theme := r.URL.Query().Get("theme"); theme != "" {
-		switch theme {
-		case "light":
-			return ThemeLight
-		case "dark":
-			return ThemeDark
-		case "auto":
-			return ThemeAuto
-		}
-	}
-	
-	// Check cookie
-	if cookie, err := r.Cookie("theme"); err == nil {
-		switch cookie.Value {
-		case "light":
-			return ThemeLight
-		case "dark":
-			return ThemeDark
-		case "auto":
-			return ThemeAuto
-		}
-	}
-	
-	// Default to dark
-	return ThemeDark
+// DetectTheme uses central theme system
+func DetectTheme(r *http.Request) string {
+	return theme.DetectTheme(r)
 }
 
 // GetThemeCSS returns CSS for the specified theme
-func GetThemeCSS(theme Theme) string {
+func GetThemeCSS(theme string) string {
 	switch theme {
-	case ThemeLight:
+	case "light":
 		return `
 			body {
 				background-color: #ffffff;
@@ -58,7 +25,7 @@ func GetThemeCSS(theme Theme) string {
 				--color-secondary: 110, 110, 110;
 			}
 		`
-	case ThemeDark:
+	case "dark":
 		return `
 			body {
 				background-color: #1a1a1a;
@@ -70,7 +37,7 @@ func GetThemeCSS(theme Theme) string {
 				--color-base: 26, 26, 26;
 			}
 		`
-	case ThemeAuto:
+	case "auto":
 		return `
 			@media (prefers-color-scheme: dark) {
 				body {
@@ -99,30 +66,3 @@ func GetThemeCSS(theme Theme) string {
 	}
 }
 
-// SetThemeCookie sets theme cookie
-func SetThemeCookie(w http.ResponseWriter, theme Theme) {
-	cookie := &http.Cookie{
-		Name:     "theme",
-		Value:    string(theme),
-		Path:     "/",
-		MaxAge:   31536000,
-		HttpOnly: false,
-		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
-}
-
-// ThemeFromString converts string to Theme
-func ThemeFromString(s string) Theme {
-	s = strings.ToLower(strings.TrimSpace(s))
-	switch s {
-	case "light":
-		return ThemeLight
-	case "dark":
-		return ThemeDark
-	case "auto":
-		return ThemeAuto
-	default:
-		return ThemeDark
-	}
-}

@@ -9,18 +9,20 @@ repo_url: https://github.com/casapps/casspeed
 theme:
   name: material
   palette:
-    - scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
+    # Dark theme first (default per spec)
     - scheme: slate
       primary: indigo
       accent: indigo
       toggle:
-        icon: material/brightness-4
+        icon: material/brightness-7
         name: Switch to light mode
+    # Light theme second
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
   features:
     - navigation.instant
     - navigation.tracking
@@ -53,3 +55,6 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+
+extra_css:
+  - stylesheets/extra.css
