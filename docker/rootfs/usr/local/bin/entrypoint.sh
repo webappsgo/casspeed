@@ -12,7 +12,7 @@ export DATABASE_DIR="/data/db"
 export BACKUP_DIR="/data/backup"
 
 log() {
-    echo "[entrypoint] $(date '+%Y-%m-% %H:%M:%S') $*"
+    echo "[entrypoint] $(date '+%Y-%m-%d %H:%M:%S') $*"
 }
 
 log "Container starting..."

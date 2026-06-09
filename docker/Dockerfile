@@ -1,10 +1,7 @@
 # =============================================================================
 # Build Stage - Compile Go binary
 # =============================================================================
-FROM golang:alpine AS builder
-
-# Install git and bash (git: required for go mod download; bash: for build scripts)
-RUN apk add --no-cache git bash
+FROM casjaysdev/go:latest AS builder
 
 ARG TARGETARCH
 ARG VERSION=dev
@@ -36,14 +33,14 @@ ARG LICENSE=MIT
 
 # Static Labels
 LABEL maintainer="casjay <docker-admin@casjaysdev.pro>" \
-      org.opencontainers.image.vendor="casapps" \
-      org.opencontainers.image.authors="casapps" \
+      org.opencontainers.image.vendor="webappsgo" \
+      org.opencontainers.image.authors="webappsgo" \
       org.opencontainers.image.title="casspeed" \
       org.opencontainers.image.base.name="casspeed" \
-      org.opencontainers.image.description="Self-hosted speedtest.net alternative" \
-      org.opencontainers.image.url="https://github.com/casapps/casspeed" \
-      org.opencontainers.image.source="https://github.com/casapps/casspeed" \
-      org.opencontainers.image.documentation="https://github.com/casapps/casspeed" \
+      org.opencontainers.image.description="Self-hosted speed testing server" \
+      org.opencontainers.image.url="https://github.com/webappsgo/casspeed" \
+      org.opencontainers.image.source="https://github.com/webappsgo/casspeed" \
+      org.opencontainers.image.documentation="https://github.com/webappsgo/casspeed" \
       org.opencontainers.image.vcs-type="Git" \
       com.github.containers.toolbox="false"
 

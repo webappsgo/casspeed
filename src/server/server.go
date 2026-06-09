@@ -106,7 +106,10 @@ func New(cfg *config.Config, appMode *mode.State, dataDir string, logDir string,
 }
 
 func (s *Server) setupMiddleware() {
-	// Path security middleware FIRST (PART 5 - NON-NEGOTIABLE)
+	// URL normalization FIRST — trailing slash removal + 301 redirect (PART 16)
+	s.Router.Use(srcMiddleware.URLNormalizeMiddleware)
+
+	// Path security middleware — traversal blocking (PART 5 - NON-NEGOTIABLE)
 	s.Router.Use(srcMiddleware.PathSecurityMiddleware)
 
 	// Security headers (PART 11 - NON-NEGOTIABLE)
@@ -136,10 +139,17 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
-	// Static files (CSS, JS, images) - served from embedded FS
+	// Determine admin path (configurable, default "admin")
+	adminPath := s.Config.Server.AdminPath
+	if adminPath == "" {
+		adminPath = "admin"
+	}
+
+	// Static files — served from embedded FS
 	staticHandler := http.FileServer(http.FS(staticFS))
 	s.Router.Handle("/static/*", http.StripPrefix("/static", staticHandler))
-	
+
+	// Root / public routes
 	s.Router.Get("/", s.handleIndex)
 
 	// Well-known files (PART 11 - NON-NEGOTIABLE)
@@ -147,99 +157,104 @@ func (s *Server) setupRoutes() {
 	s.Router.Get("/.well-known/security.txt", s.handleSecurityTxt)
 	s.Router.Get("/.well-known/change-password", s.handleChangePassword)
 
+	// Health check — primary at /server/healthz, alias at /healthz (PART 13)
+	s.Router.Get("/server/healthz", s.handleHealth)
+	s.Router.Get("/server/healthz.json", s.handleHealth)
+	s.Router.Get("/server/healthz.txt", s.handleHealth)
 	s.Router.Get("/healthz", s.handleHealth)
 	s.Router.Get("/healthz.json", s.handleHealth)
 	s.Router.Get("/healthz.txt", s.handleHealth)
 
+	// Metrics endpoint (Prometheus format)
+	s.Router.Get("/metrics", s.handleMetrics)
+
+	// API v1 routes
 	s.Router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/", s.handleAPIRoot)
-		r.Get("/healthz", s.handleHealth)
-		r.Get("/healthz.json", s.handleHealth)
-		r.Get("/healthz.txt", s.handleHealth)
-		
-		// Auth endpoints (public)
+
+		// Health check API route (PART 13)
+		r.Get("/server/healthz", s.handleHealth)
+		r.Get("/server/healthz.json", s.handleHealth)
+		r.Get("/server/healthz.txt", s.handleHealth)
+
+		// Auth endpoints — /api/v1/server/auth/* (PART 14)
 		authHandler := handler.NewAuthHandler(s.Store)
-		r.Post("/auth/register", s.UserHandler.Register)
-		r.Post("/auth/login", authHandler.Login)
-		r.Post("/auth/logout", authHandler.Logout)
-		r.Post("/auth/password/forgot", authHandler.PasswordResetRequest)
-		
-		// Speed test endpoints (public)
-		r.Post("/speedtest/start", s.Handler.StartTest)
-		r.Get("/speedtest/ws", s.Handler.TestStatus)
-		r.Get("/speedtest/download", s.Handler.Download)
-		r.Post("/speedtest/upload", s.Handler.Upload)
-		r.Get("/speedtest/result/{id}", s.Handler.GetResult)
-		r.Get("/speedtest/history", s.Handler.GetHistory)
+		r.Post("/server/auth/register", s.UserHandler.Register)
+		r.Post("/server/auth/login", authHandler.Login)
+		r.Post("/server/auth/logout", authHandler.Logout)
+		r.Post("/server/auth/password/forgot", authHandler.PasswordResetRequest)
 
-		// User management endpoints (authenticated)
-		r.Get("/users/{id}", s.UserHandler.GetProfile)
-		r.Get("/users/{id}/devices", s.UserHandler.ListDevices)
-		r.Post("/users/{id}/devices", s.UserHandler.CreateDevice)
-		r.Delete("/users/{id}/devices/{deviceId}", s.UserHandler.DeleteDevice)
-		r.Get("/users/{id}/tokens", s.UserHandler.ListTokens)
-		r.Post("/users/{id}/tokens", s.UserHandler.CreateToken)
-		r.Delete("/users/{id}/tokens/{tokenId}", s.UserHandler.RevokeToken)
+		// Speed test endpoints (public, project-specific)
+		r.Post("/speed-tests", s.Handler.StartTest)
+		r.Get("/speed-tests/ws", s.Handler.TestStatus)
+		r.Get("/speed-tests/download", s.Handler.Download)
+		r.Post("/speed-tests/upload", s.Handler.Upload)
+		r.Get("/speed-tests/{id}", s.Handler.GetResult)
+		r.Get("/speed-tests", s.Handler.GetHistory)
 
-		// Admin API endpoints
-		r.Get("/admin/settings", s.AdminHandler.RequireAuth(s.AdminHandler.GetSettings))
-		r.Put("/admin/settings", s.AdminHandler.RequireAuth(s.AdminHandler.UpdateSettings))
+		// User self-management (no ID — session identifies user) (PART 14)
+		r.Get("/users", s.UserHandler.GetProfile)
+		r.Get("/users/devices", s.UserHandler.ListDevices)
+		r.Post("/users/devices", s.UserHandler.CreateDevice)
+		r.Delete("/users/devices/{deviceId}", s.UserHandler.DeleteDevice)
+		r.Get("/users/tokens", s.UserHandler.ListTokens)
+		r.Post("/users/tokens", s.UserHandler.CreateToken)
+		r.Delete("/users/tokens/{tokenId}", s.UserHandler.RevokeToken)
+
+		// Admin API endpoints — /api/v1/server/{adminPath}/config/* (PART 17)
+		r.Get("/server/"+adminPath+"/config/settings", s.AdminHandler.RequireAuth(s.AdminHandler.GetSettings))
+		r.Put("/server/"+adminPath+"/config/settings", s.AdminHandler.RequireAuth(s.AdminHandler.UpdateSettings))
 	})
 
-	// Admin panel web UI (PART 17 route hierarchy)
-	// Get admin path from config (default: "admin")
-	adminPath := s.Config.Server.AdminPath
-	if adminPath == "" {
-		adminPath = "admin"
-	}
+	// ==========================================================================
+	// Admin Panel Web UI — /server/{adminPath}/* (PART 17)
+	// ==========================================================================
 
-	// Setup wizard routes (accessible without auth before setup complete)
-	s.Router.Post("/"+adminPath+"/setup/token", s.AdminHandler.SetupTokenHandler)
-	s.Router.Get("/"+adminPath+"/setup", s.AdminHandler.SetupWizardHandler)
-	s.Router.Post("/"+adminPath+"/setup/complete", s.AdminHandler.SetupCompleteHandler)
+	// Setup wizard — accessible without auth before setup is complete
+	s.Router.Post("/server/"+adminPath+"/config/setup/token", s.AdminHandler.SetupTokenHandler)
+	s.Router.Get("/server/"+adminPath+"/config/setup", s.AdminHandler.SetupWizardHandler)
+	s.Router.Post("/server/"+adminPath+"/config/setup/complete", s.AdminHandler.SetupCompleteHandler)
 
-	// Admin root routes (PART 17 hierarchy)
-	// /{adminpath}/ = Dashboard (after login)
-	// /{adminpath}/profile = Admin's own profile
-	// /{adminpath}/preferences = Admin's own preferences
-	// /{adminpath}/notifications = Admin's own notifications
-	// /{adminpath}/server/* = ALL server management
-	s.Router.Get("/"+adminPath, s.AdminHandler.Login)
-	s.Router.Post("/"+adminPath+"/login", s.AdminHandler.Login)
-	s.Router.Get("/"+adminPath+"/logout", s.AdminHandler.Logout)
+	// Admin login / logout (no auth required)
+	s.Router.Get("/server/"+adminPath, s.AdminHandler.Login)
+	s.Router.Post("/server/"+adminPath+"/login", s.AdminHandler.Login)
+	s.Router.Get("/server/"+adminPath+"/logout", s.AdminHandler.Logout)
 
-	// Dashboard at root (after auth)
-	s.Router.Get("/"+adminPath+"/", s.AdminHandler.RequireAuth(s.AdminHandler.Dashboard))
+	// Admin dashboard root (PART 17: dashboard ONLY at root)
+	s.Router.Get("/server/"+adminPath+"/", s.AdminHandler.RequireAuth(s.AdminHandler.Dashboard))
 
-	// Admin's own profile/preferences (root level per PART 17)
-	s.Router.Get("/"+adminPath+"/profile", s.AdminHandler.RequireAuth(s.AdminHandler.Profile))
-	s.Router.Get("/"+adminPath+"/preferences", s.AdminHandler.RequireAuth(s.AdminHandler.Preferences))
-	s.Router.Get("/"+adminPath+"/notifications", s.AdminHandler.RequireAuth(s.AdminHandler.Notifications))
+	// Admin's own account — /server/{adminPath}/{username}/* (PART 17)
+	s.Router.Get("/server/"+adminPath+"/{username}/profile", s.AdminHandler.RequireAuth(s.AdminHandler.Profile))
+	s.Router.Get("/server/"+adminPath+"/{username}/preferences", s.AdminHandler.RequireAuth(s.AdminHandler.Preferences))
+	s.Router.Get("/server/"+adminPath+"/{username}/notifications", s.AdminHandler.RequireAuth(s.AdminHandler.Notifications))
 
-	// Server management routes (PART 17: ALL server management under /server/*)
-	s.Router.Get("/"+adminPath+"/server/settings", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSettings))
-	s.Router.Get("/"+adminPath+"/server/info", s.AdminHandler.RequireAuth(s.AdminHandler.ServerInfo))
-	s.Router.Get("/"+adminPath+"/server/logs", s.AdminHandler.RequireAuth(s.AdminHandler.ServerLogs))
-	s.Router.Get("/"+adminPath+"/server/logs/audit", s.AdminHandler.RequireAuth(s.AdminHandler.ServerAuditLogs))
-	s.Router.Get("/"+adminPath+"/server/backup", s.AdminHandler.RequireAuth(s.AdminHandler.ServerBackup))
-	s.Router.Get("/"+adminPath+"/server/updates", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUpdates))
-	s.Router.Get("/"+adminPath+"/server/ssl", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSSL))
-	s.Router.Get("/"+adminPath+"/server/email", s.AdminHandler.RequireAuth(s.AdminHandler.ServerEmail))
-	s.Router.Get("/"+adminPath+"/server/scheduler", s.AdminHandler.RequireAuth(s.AdminHandler.ServerScheduler))
-	s.Router.Get("/"+adminPath+"/server/metrics", s.AdminHandler.RequireAuth(s.AdminHandler.ServerMetrics))
+	// Server config routes — ALL under /server/{adminPath}/config/* (PART 17)
+	s.Router.Get("/server/"+adminPath+"/config/settings", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSettings))
+	s.Router.Post("/server/"+adminPath+"/config/settings", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSettings))
+	s.Router.Get("/server/"+adminPath+"/config/info", s.AdminHandler.RequireAuth(s.AdminHandler.ServerInfo))
+	s.Router.Get("/server/"+adminPath+"/config/logs", s.AdminHandler.RequireAuth(s.AdminHandler.ServerLogs))
+	s.Router.Get("/server/"+adminPath+"/config/logs/audit", s.AdminHandler.RequireAuth(s.AdminHandler.ServerAuditLogs))
+	s.Router.Get("/server/"+adminPath+"/config/backup", s.AdminHandler.RequireAuth(s.AdminHandler.ServerBackup))
+	s.Router.Get("/server/"+adminPath+"/config/updates", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUpdates))
+	s.Router.Get("/server/"+adminPath+"/config/ssl", s.AdminHandler.RequireAuth(s.AdminHandler.ServerSSL))
+	s.Router.Get("/server/"+adminPath+"/config/email", s.AdminHandler.RequireAuth(s.AdminHandler.ServerEmail))
+	s.Router.Get("/server/"+adminPath+"/config/scheduler", s.AdminHandler.RequireAuth(s.AdminHandler.ServerScheduler))
+	s.Router.Get("/server/"+adminPath+"/config/metrics", s.AdminHandler.RequireAuth(s.AdminHandler.ServerMetrics))
 
-	// Network settings
-	s.Router.Get("/"+adminPath+"/server/network/tor", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkTor))
-	s.Router.Get("/"+adminPath+"/server/network/geoip", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkGeoIP))
+	// Network config
+	s.Router.Get("/server/"+adminPath+"/config/network/tor", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkTor))
+	s.Router.Get("/server/"+adminPath+"/config/network/geoip", s.AdminHandler.RequireAuth(s.AdminHandler.NetworkGeoIP))
 
-	// Security settings
-	s.Router.Get("/"+adminPath+"/server/security/auth", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityAuth))
-	s.Router.Get("/"+adminPath+"/server/security/tokens", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityTokens))
+	// Security config
+	s.Router.Get("/server/"+adminPath+"/config/security/auth", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityAuth))
+	s.Router.Get("/server/"+adminPath+"/config/security/tokens", s.AdminHandler.RequireAuth(s.AdminHandler.SecurityTokens))
 
-	// Users management (if multi-user enabled)
-	s.Router.Get("/"+adminPath+"/server/users", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUsers))
+	// User management (multi-user)
+	s.Router.Get("/server/"+adminPath+"/config/users", s.AdminHandler.RequireAuth(s.AdminHandler.ServerUsers))
 
+	// ==========================================================================
 	// Share endpoints (public)
+	// ==========================================================================
 	s.Router.Get("/share/{code}", s.Handler.GetShare)
 	s.Router.Get("/s/{code}", s.Handler.GetShare)
 	s.Router.Get("/share/{code}.png", s.ImageHandler.GetSharePNG)
@@ -254,9 +269,6 @@ func (s *Server) setupRoutes() {
 	// GraphQL
 	s.Router.Get("/graphql", graphql.Handler)
 	s.Router.Post("/graphql/query", graphql.QueryHandler)
-
-	// Metrics endpoint (Prometheus format)
-	s.Router.Get("/metrics", s.handleMetrics)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -416,7 +428,7 @@ func (s *Server) handleRobotsTxt(w http.ResponseWriter, r *http.Request) {
 User-agent: *
 Allow: /
 Allow: /api
-Disallow: /%s
+Disallow: /server/%s
 `, adminPath)
 }
 

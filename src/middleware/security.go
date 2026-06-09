@@ -6,6 +6,35 @@ import (
 	"strings"
 )
 
+// URLNormalizeMiddleware removes trailing slashes (except root "/") and redirects
+// to canonical URL with 301. Must run first in the middleware chain. (PART 16)
+func URLNormalizeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+
+		// Root stays as-is
+		if p == "/" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Remove trailing slash unless path ends with a file extension
+		if strings.HasSuffix(p, "/") {
+			last := p[strings.LastIndex(p, "/"):]
+			if !strings.Contains(last, ".") {
+				canonical := strings.TrimSuffix(p, "/")
+				if r.URL.RawQuery != "" {
+					canonical += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, canonical, http.StatusMovedPermanently)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // SecurityHeaders adds security headers to all responses per PART 11 specification
 func SecurityHeaders(sslEnabled bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*.[0-9]*.[0-9]*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  ensure-build-image:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    outputs:
+      image: ${{ steps.pull.outputs.image }}
+    steps:
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: pull
+        name: Pull build image (fail fast if missing)
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:build"
+          if ! docker pull "$IMAGE"; then
+            echo "::error::Build image $IMAGE not found."
+            echo "::error::Trigger the 'Build Toolchain Image' workflow (workflow_dispatch) to create it."
+            exit 1
+          fi
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: ensure-build-image
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.ensure-build-image.outputs.image }}
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            ext: .exe
+          - goos: freebsd
+            goarch: amd64
+          - goos: freebsd
+            goarch: arm64
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set build info
+        run: |
+          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+
+      - name: Build server binary
+        run: |
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "$LDFLAGS" \
+            -o casspeed-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }} \
+            ./src
+
+      - name: Build CLI binary
+        run: |
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags "$LDFLAGS" \
+            -o casspeed-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }} \
+            ./src/client
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            casspeed-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }}
+            casspeed-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set version
+        run: |
+          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Delete existing release/tag if exists
+        run: |
+          gh release delete ${{ env.VERSION }} --yes 2>/dev/null || true
+          git tag -d ${{ env.VERSION }} 2>/dev/null || true
+          git push origin :refs/tags/${{ env.VERSION }} 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub release
+        run: |
+          gh release create ${{ env.VERSION }} dist/* \
+            --title "casspeed ${{ env.VERSION }}" \
+            --notes "Release ${{ env.VERSION }}" \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Set build info
+        run: |
+          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@902fa8ec7d6ecbea8a09e18948778cf2c82b2b4f
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+          annotations: |
+            org.opencontainers.image.description=Self-hosted speed testing server
+            org.opencontainers.image.title=casspeed
+            org.opencontainers.image.licenses=MIT
+
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          annotations: ${{ steps.meta.outputs.annotations }}
+          labels: ""
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+            COMMIT_ID=${{ env.COMMIT_ID }}

@@ -1,0 +1,9 @@
+# Global owners — review required for everything not covered below
+* @webappsgo
+
+# Workflow changes require maintainer sign-off
+.github/ @webappsgo
+
+# Security-sensitive files
+SECURITY.md @webappsgo
+docker/ @webappsgo

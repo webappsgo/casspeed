@@ -1,4 +1,4 @@
-<!DOCTYPEhtml>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -9,30 +9,49 @@
   <link rel="stylesheet" href="/static/css/admin/style.css">
 </head>
 <body>
-  <div class="admin-container">
-    <nav>
-      <a href="/admin/dashboard">Dashboard</a>
-      <a href="/admin/server/settings">Settings</a>
-      <a href="/admin/server/info">Info</a>
-      <a href="/admin/server/logs">Logs</a>
-      <a href="/admin/logout">Logout</a>
+  <div class="admin-layout">
+    <nav class="admin-nav">
+      <div class="admin-nav-brand">casspeed admin</div>
+      <ul>
+        <li><a href="/server/admin/" class="active">Dashboard</a></li>
+        <li><a href="/server/admin/config/settings">Settings</a></li>
+        <li><a href="/server/admin/config/info">Server Info</a></li>
+        <li><a href="/server/admin/config/logs">Logs</a></li>
+        <li><a href="/server/admin/config/backup">Backup</a></li>
+        <li><a href="/server/admin/config/updates">Updates</a></li>
+        <li><a href="/server/admin/config/ssl">SSL/TLS</a></li>
+        <li><a href="/server/admin/config/email">Email</a></li>
+        <li><a href="/server/admin/config/scheduler">Scheduler</a></li>
+        <li><a href="/server/admin/config/metrics">Metrics</a></li>
+        <li><a href="/server/admin/config/network/tor">Tor</a></li>
+        <li><a href="/server/admin/config/network/geoip">GeoIP</a></li>
+        <li><a href="/server/admin/config/security/auth">Auth</a></li>
+        <li><a href="/server/admin/config/users">Users</a></li>
+        <li><a href="/server/admin/logout">Logout</a></li>
+      </ul>
     </nav>
-    
-    <h1>Admin Dashboard</h1>
-    
-    <div class="card">
-      <h2>System Status</h2>
-      <p>Server: Running</p>
-      <p>Uptime: {{.Uptime}}</p>
-      <p>Version: {{.Version}}</p>
-    </div>
-    
-    <div class="card">
-      <h2>Quick Stats</h2>
-      <p>Total Tests: {{.TotalTests}}</p>
-      <p>Users: {{.TotalUsers}}</p>
-      <p>Devices: {{.TotalDevices}}</p>
-    </div>
+    <main class="admin-main">
+      <h1>Dashboard</h1>
+      <div class="cards">
+        <div class="card">
+          <h2>System Status</h2>
+          <p>Status: Running</p>
+          <p>Uptime: {{.Uptime}}</p>
+          <p>Version: {{.Version}}</p>
+          <p>Mode: {{.Mode}}</p>
+        </div>
+        <div class="card">
+          <h2>Speed Tests</h2>
+          <p>Total Tests: {{.TotalTests}}</p>
+          <p>Tests Today: {{.TestsToday}}</p>
+        </div>
+        <div class="card">
+          <h2>Users</h2>
+          <p>Total Users: {{.TotalUsers}}</p>
+          <p>Total Devices: {{.TotalDevices}}</p>
+        </div>
+      </div>
+    </main>
   </div>
 </body>
 </html>

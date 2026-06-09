@@ -1,0 +1,60 @@
+# =============================================================================
+# Dev Image — :devel
+# Same binary as release but running in debug/development mode
+# Useful for debugging and testing with live logs
+# =============================================================================
+FROM casjaysdev/go:latest AS builder
+
+ARG TARGETARCH
+ARG VERSION=dev
+ARG BUILD_DATE
+ARG COMMIT_ID
+
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# Build with debug symbols (no -s -w) for dev image
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+    -ldflags "-X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildDate=${BUILD_DATE}'" \
+    -o /build/binary/casspeed ./src
+
+# =============================================================================
+# Runtime Stage
+# =============================================================================
+FROM alpine:latest
+
+RUN apk add --no-cache \
+    git \
+    curl \
+    bash \
+    tini \
+    tor
+
+RUN mkdir -p /config/casspeed /config/casspeed/ssl /config/casspeed/tor \
+             /data/casspeed /data/db/sqlite \
+             /data/log/casspeed /data/backups/casspeed && \
+    chown -R root:root /config /data
+
+COPY --from=builder /build/binary/casspeed /usr/local/bin/casspeed
+COPY docker/rootfs/ /
+COPY docker/Dockerfile.dev /root/Dockerfile
+
+RUN chmod 755 /usr/local/bin/*
+
+# Development mode: debug enabled, verbose logging, relaxed security
+ENV MODE=development \
+    DEBUG=true \
+    TZ=America/New_York
+
+EXPOSE 80
+
+STOPSIGNAL SIGRTMIN+3
+
+HEALTHCHECK --start-period=2m --interval=1m --timeout=10s --retries=3 \
+    CMD /usr/local/bin/casspeed --status || exit 1
+
+ENTRYPOINT [ "tini", "-p", "SIGTERM", "--", "/usr/local/bin/entrypoint.sh" ]
