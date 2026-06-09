@@ -468,11 +468,17 @@ func (s *Server) Start(address string, port int) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	fmt.Printf("│  🌐 HTTP   http://%s%s│\n", addr, padAddr(addr))
-	fmt.Println("├─────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│  📡 Listening on http://%s%s│\n", addr, padAddr(addr))
-	fmt.Printf("│  ✅ Server started on %s%s│\n", time.Now().Format("Mon Jan 02, 2006 at 15:04:05 MST"), padTime())
-	fmt.Println("╰─────────────────────────────────────────────────────────────╯")
+	// Respect NO_COLOR env var for console output
+	if os.Getenv("NO_COLOR") == "" {
+		fmt.Printf("│  🌐 HTTP   http://%s%s│\n", addr, padAddr(addr))
+		fmt.Println("├─────────────────────────────────────────────────────────────┤")
+		fmt.Printf("│  📡 Listening on http://%s%s│\n", addr, padAddr(addr))
+		fmt.Printf("│  ✅ Server started on %s%s│\n", time.Now().Format("Mon Jan 02, 2006 at 15:04:05 MST"), padTime())
+		fmt.Println("╰─────────────────────────────────────────────────────────────╯")
+	} else {
+		fmt.Printf("Listening on http://%s\n", addr)
+		fmt.Printf("Server started at %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	}
 
 	errChan := make(chan error, 1)
 	go func() {
@@ -491,7 +497,11 @@ func (s *Server) Start(address string, port int) error {
 }
 
 func (s *Server) Shutdown() error {
-	fmt.Println("\n🛑 Shutting down gracefully...")
+	if os.Getenv("NO_COLOR") == "" {
+		fmt.Println("\n🛑 Shutting down gracefully...")
+	} else {
+		fmt.Println("\nShutting down gracefully...")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -504,7 +514,11 @@ func (s *Server) Shutdown() error {
 		return fmt.Errorf("server shutdown failed: %w", err)
 	}
 
-	fmt.Println("✅ Server stopped")
+	if os.Getenv("NO_COLOR") == "" {
+		fmt.Println("✅ Server stopped")
+	} else {
+		fmt.Println("Server stopped")
+	}
 	return nil
 }
 

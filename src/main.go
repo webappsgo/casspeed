@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/casapps/casspeed/src/admin"
@@ -38,8 +39,12 @@ func main() {
 		showVersion bool
 		showStatus  bool
 		daemonFlag  bool
+		debugFlag   bool
 		modeFlag    string
-		debugFlag   string
+		colorFlag   string
+		langFlag    string
+		baseurlFlag string
+		shellCmd    string
 		configDir   string
 		dataDir     string
 		cacheDir    string
@@ -57,18 +62,22 @@ func main() {
 	flag.BoolVar(&showHelp, "h", false, "Show help information (short)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (short)")
-	flag.BoolVar(&showStatus, "status", false, "Show status and health")
-	flag.BoolVar(&daemonFlag, "daemon", false, "Daemonize (detach from terminal)")
+	flag.BoolVar(&showStatus, "status", false, "Show status and health (exit 0=healthy, 1=unhealthy)")
+	flag.BoolVar(&daemonFlag, "daemon", false, "Run as daemon (detach from terminal)")
+	flag.BoolVar(&debugFlag, "debug", false, "Enable debug mode (verbose logging, debug endpoints)")
 	flag.StringVar(&modeFlag, "mode", "", "Application mode (production|development)")
-	flag.StringVar(&debugFlag, "debug", "", "Enable debug mode")
+	flag.StringVar(&colorFlag, "color", "auto", "Color output (auto|yes|no)")
+	flag.StringVar(&langFlag, "lang", "", "Language for output (default: auto from LANG env)")
+	flag.StringVar(&baseurlFlag, "baseurl", "/", "URL path prefix (default: /)")
+	flag.StringVar(&shellCmd, "shell", "", "Shell integration (completions|init|help) [SHELL]")
 	flag.StringVar(&configDir, "config", "", "Configuration directory")
 	flag.StringVar(&dataDir, "data", "", "Data directory")
 	flag.StringVar(&cacheDir, "cache", "", "Cache directory")
 	flag.StringVar(&logDir, "log", "", "Log directory")
 	flag.StringVar(&backupDir, "backup", "", "Backup directory")
 	flag.StringVar(&pidFile, "pid", "", "PID file path")
-	flag.StringVar(&address, "address", "", "Listen address")
-	flag.StringVar(&portFlag, "port", "", "Listen port")
+	flag.StringVar(&address, "address", "", "Listen address (default: [::])")
+	flag.StringVar(&portFlag, "port", "", "Listen port (default: random 64xxx)")
 	flag.StringVar(&serviceCmd, "service", "", "Service management (start|stop|restart|reload|install|uninstall|help)")
 	flag.StringVar(&maintCmd, "maintenance", "", "Maintenance operations (backup|restore|update|mode|setup)")
 	flag.StringVar(&updateCmd, "update", "", "Update operations (check|yes|branch stable|beta|daily)")
@@ -79,6 +88,9 @@ func main() {
 
 	flag.Parse()
 
+	// Resolve color mode — CLI flag > config > NO_COLOR env > auto-detect
+	colorEnabled := resolveColorMode(colorFlag)
+
 	// Handle --help
 	if showHelp {
 		showHelpText(binaryName)
@@ -87,7 +99,7 @@ func main() {
 
 	// Handle --version
 	if showVersion {
-		showVersionInfo(binaryName)
+		showVersionInfo(binaryName, colorEnabled)
 		os.Exit(0)
 	}
 
@@ -96,6 +108,17 @@ func main() {
 		showStatusInfo(binaryName)
 		os.Exit(0)
 	}
+
+	// Handle --shell completions|init|help [SHELL]
+	if shellCmd != "" {
+		handleShell(binaryName, shellCmd, flag.Args())
+		os.Exit(0)
+	}
+
+	// Suppress unused variable warning for langFlag and baseurlFlag
+	// (used in future i18n and reverse-proxy base path support)
+	_ = langFlag
+	_ = baseurlFlag
 
 	// Handle --service
 	if serviceCmd != "" {
@@ -122,8 +145,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Detect application mode
-	appMode, err := mode.Detect(modeFlag, debugFlag)
+	// Detect application mode (debug flag is bool per spec PART 8)
+	debugStr := ""
+	if debugFlag {
+		debugStr = "true"
+	}
+	appMode, err := mode.Detect(modeFlag, debugStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -241,68 +268,197 @@ func main() {
 }
 
 func showHelpText(binaryName string) {
-	fmt.Printf(`Usage: %s [options]
+	fmt.Printf(`%s v%s - Self-hosted speed testing server
 
-casspeed - Self-hosted Speed Testing Server
+Usage:
+  %s [flags]
 
-OPTIONS:
-  -h, --help              Show this help message
-  -v, --version           Show version information
-  --status                Show status and health
-  --mode MODE             Set application mode (production|development)
-  --debug                 Enable debug mode (verbose logging, debug endpoints)
-  --daemon                Daemonize (detach from terminal)
-  --config DIR            Configuration directory
-  --data DIR              Data directory
-  --cache DIR             Cache directory
-  --log DIR               Log directory
-  --backup DIR            Backup directory
-  --pid FILE              PID file path
-  --address ADDR          Listen address (default: [::])
-  --port PORT             Listen port (default: random 64xxx)
-  --service CMD           Service management (start|stop|restart|reload|install|uninstall|help)
-  --maintenance CMD       Maintenance operations (backup|restore|update|mode|setup)
-  --update CMD            Update operations (check|yes|branch stable|beta|daily)
+Information:
+  -h, --help                             Show help (--help for any command shows its help)
+  -v, --version                          Show version
+  --status                               Show server status and health
 
-EXAMPLES:
-  %s
-    Start server with defaults
+Shell Integration:
+  --shell completions [SHELL]            Print shell completions
+  --shell init [SHELL]                   Print shell init command
+  --shell help                           Show shell help
 
-  %s --port 8080
-    Start on port 8080
+Server Configuration:
+  --mode {production|development}        Application mode (default: production)
+  --config DIR                           Config directory
+  --data DIR                             Data directory
+  --cache DIR                            Cache directory
+  --log DIR                              Log directory
+  --backup DIR                           Backup directory
+  --pid FILE                             PID file path
+  --address ADDR                         Listen address (default: [::])
+  --port PORT                            Listen port (default: random 64xxx)
+  --baseurl PATH                         URL path prefix (default: /)
+  --daemon                               Run as daemon (detach from terminal)
+  --debug                                Enable debug mode
+  --color {auto|yes|no}                  Color output (default: auto)
+  --lang CODE                            Language for output (default: auto)
 
-  %s --mode production --port 443
-    Start in production mode on port 443
+Service Management:
+  --service CMD                          Service management (run --service help for details)
+  --maintenance CMD                      Maintenance operations (run --maintenance help for details)
+  --update [CMD]                         Check/perform updates (run --update help for details)
 
-  %s --config /etc/casspeed --data /var/lib/casspeed
-    Start with custom directories
-
-  %s --status
-    Show server status
-
-  %s --service start
-    Start as service
-
-  %s --maintenance backup
-    Backup database
-
-For more information, visit: https://github.com/casapps/casspeed
-`, binaryName, binaryName, binaryName, binaryName, binaryName, binaryName, binaryName, binaryName)
+Run '%s <command> help' for detailed help on any command.
+`, binaryName, Version, binaryName, binaryName)
 }
 
-func showVersionInfo(binaryName string) {
-	// Format: binaryname v1.2.3 (commit) built YYYY-MM-DD
+// resolveColorMode determines if color/emoji output should be used.
+// Priority: --color flag > NO_COLOR env > auto-detect TTY.
+func resolveColorMode(flag string) bool {
+	switch strings.ToLower(flag) {
+	case "yes", "on", "1", "true":
+		return true
+	case "no", "off", "0", "false":
+		return false
+	}
+	// auto: NO_COLOR env disables color
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	// auto: no TTY = no color (piped output)
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func showVersionInfo(binaryName string, colorEnabled bool) {
 	fmt.Printf("%s v%s (%s) built %s\n", binaryName, Version, CommitID, BuildDate)
 }
 
+// handleShell implements --shell completions|init|help [SHELL]
+func handleShell(binaryName, cmd string, args []string) {
+	targetShell := ""
+	if len(args) > 0 {
+		targetShell = args[0]
+	}
+	if targetShell == "" {
+		// Auto-detect from SHELL env
+		shell := os.Getenv("SHELL")
+		if shell != "" {
+			parts := strings.Split(shell, "/")
+			targetShell = parts[len(parts)-1]
+		}
+		if targetShell == "" {
+			targetShell = "bash"
+		}
+	}
+
+	switch cmd {
+	case "completions":
+		handleShellCompletions(binaryName, targetShell)
+	case "init":
+		handleShellInit(binaryName, targetShell)
+	case "help", "--help":
+		fmt.Printf(`Shell Integration for %s
+
+Usage:
+  %s --shell completions [SHELL]  Print shell completions
+  %s --shell init [SHELL]         Print shell init command
+  %s --shell help                 Show this help
+
+Supported shells: bash, zsh, fish
+
+Add to your shell config:
+  bash:  eval "$(%s --shell init bash)"
+  zsh:   eval "$(%s --shell init zsh)"
+  fish:  %s --shell init fish | source
+`, binaryName, binaryName, binaryName, binaryName, binaryName, binaryName, binaryName)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown shell command: %s\n", cmd)
+		fmt.Fprintf(os.Stderr, "Run '%s --shell help' for available commands\n", binaryName)
+		os.Exit(2)
+	}
+}
+
+func handleShellCompletions(binaryName, shell string) {
+	switch shell {
+	case "bash":
+		fmt.Printf(`_%s_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local opts="--help --version --status --mode --config --data --cache --log --backup --pid --address --port --baseurl --daemon --debug --color --lang --service --maintenance --update --shell"
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+}
+complete -F _%s_completions %s
+`, binaryName, binaryName, binaryName)
+	case "zsh":
+		fmt.Printf(`#compdef %s
+_%s() {
+    local -a opts
+    opts=(
+        '--help:Show help'
+        '--version:Show version'
+        '--status:Show server status'
+        '--mode:Application mode (production|development)'
+        '--config:Configuration directory'
+        '--data:Data directory'
+        '--port:Listen port'
+        '--address:Listen address'
+        '--debug:Enable debug mode'
+        '--color:Color output (auto|yes|no)'
+    )
+    _describe '%s options' opts
+}
+_%s "$@"
+`, binaryName, binaryName, binaryName, binaryName)
+	case "fish":
+		fmt.Printf(`complete -c %s -l help -s h -d 'Show help'
+complete -c %s -l version -s v -d 'Show version'
+complete -c %s -l status -d 'Show server status'
+complete -c %s -l mode -d 'Application mode' -r -a 'production development'
+complete -c %s -l config -d 'Configuration directory' -r -F
+complete -c %s -l data -d 'Data directory' -r -F
+complete -c %s -l port -d 'Listen port' -r
+complete -c %s -l address -d 'Listen address' -r
+complete -c %s -l debug -d 'Enable debug mode'
+complete -c %s -l color -d 'Color output' -r -a 'auto yes no'
+`, binaryName, binaryName, binaryName, binaryName, binaryName,
+			binaryName, binaryName, binaryName, binaryName, binaryName)
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported shell: %s (supported: bash, zsh, fish)\n", shell)
+		os.Exit(2)
+	}
+}
+
+func handleShellInit(binaryName, shell string) {
+	switch shell {
+	case "bash":
+		fmt.Printf(`eval "$(%s --shell completions bash)"
+`, binaryName)
+	case "zsh":
+		fmt.Printf(`eval "$(%s --shell completions zsh)"
+`, binaryName)
+	case "fish":
+		fmt.Printf(`%s --shell completions fish | source
+`, binaryName)
+	default:
+		fmt.Fprintf(os.Stderr, "Unsupported shell: %s (supported: bash, zsh, fish)\n", shell)
+		os.Exit(2)
+	}
+}
+
 func printBanner(appMode *mode.State, cfg *config.Config) {
-	fmt.Println("╭─────────────────────────────────────────────────────────────╮")
-	fmt.Printf("│  🚀 CASSPEED · 📦 v%s%s│\n", Version, pad(Version))
-	fmt.Println("├─────────────────────────────────────────────────────────────┤")
-	fmt.Printf("│  %s Running in mode: %s%s│\n", appMode.GetConsoleIcon(), appMode.String(), padMode(appMode.String()))
-	fmt.Println("├─────────────────────────────────────────────────────────────┤")
-	fmt.Println("│  Server initialization...                                   │")
-	fmt.Println("╰─────────────────────────────────────────────────────────────╯")
+	colorEnabled := resolveColorMode("auto")
+
+	if colorEnabled {
+		fmt.Println("╭─────────────────────────────────────────────────────────────╮")
+		fmt.Printf("│  🚀 CASSPEED · 📦 v%s%s│\n", Version, pad(Version))
+		fmt.Println("├─────────────────────────────────────────────────────────────┤")
+		fmt.Printf("│  %s Running in mode: %s%s│\n", appMode.GetConsoleIcon(), appMode.String(), padMode(appMode.String()))
+		fmt.Println("├─────────────────────────────────────────────────────────────┤")
+		fmt.Println("│  Server initialization...                                   │")
+		fmt.Println("╰─────────────────────────────────────────────────────────────╯")
+	} else {
+		fmt.Printf("casspeed v%s - mode: %s\n", Version, appMode.String())
+		fmt.Println("Server initialization...")
+	}
 }
 
 func pad(version string) string {
