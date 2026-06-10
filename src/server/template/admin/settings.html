@@ -1,16 +1,50 @@
-<!DOCTYPEhtml>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin settings - casspeed</title>
+  <title>Settings — casspeed Admin</title>
   <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/theme-light.css">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/admin/style.css">
+  <script src="/static/js/theme.js"></script>
 </head>
 <body>
-  <div class="admin-container">
-    <h1>Admin settings</h1>
+  <div class="admin-layout">
+    <nav class="admin-nav" aria-label="Admin navigation">
+      <a href="/server/admin/" class="admin-nav__brand">
+        <span class="admin-nav__logo">casspeed</span>
+        <span class="admin-nav__badge">Admin</span>
+      </a>
+      <div class="admin-nav__section">
+        <ul>
+          <li><a href="/server/admin/"><span class="nav-icon" aria-hidden="true">◈</span> Dashboard</a></li>
+          <li><a href="/server/admin/config/settings" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">⚙</span> Settings</a></li>
+          <li><a href="/server/admin/config/info"><span class="nav-icon" aria-hidden="true">ℹ</span> Server Info</a></li>
+          <li><a href="/server/admin/config/logs"><span class="nav-icon" aria-hidden="true">≡</span> Logs</a></li>
+        </ul>
+      </div>
+      <div class="admin-nav__footer">
+        <a href="/">← Speed Test</a>
+        <a href="/server/admin/logout">Logout</a>
+      </div>
+    </nav>
+    <div class="admin-main">
+      <main id="main-content" class="admin-content" aria-label="Settings">
+        <h1 class="admin-page-title">Settings</h1>
+        <p class="admin-page-subtitle">Configure server behavior and defaults</p>
+        <div class="card">
+          <div class="card__header">
+            <div class="card__title">General</div>
+          </div>
+          <div class="admin-empty">
+            <div class="admin-empty__title">Settings coming soon</div>
+            <p class="admin-empty__desc">Server configuration options will be available here.</p>
+          </div>
+        </div>
+      </main>
+    </div>
   </div>
 </body>
 </html>

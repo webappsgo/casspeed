@@ -1,10 +1,133 @@
-/* Light Theme */
-:root {
-  --bg-color: #ffffff;
-  --text-color: #333333;
-  --text-muted: #666;
-  --border-color: #dddddd;
-  --link-color: #0066cc;
-  --hover-color: #f5f5f5;
-  --progress-bg: #e0e0e0;
+/* casspeed — Light theme */
+
+:root[data-theme="light"] {
+  /* Surface */
+  --bg:           #f7f8fc;
+  --bg-subtle:    #eef0f7;
+  --bg-elevated:  #ffffff;
+  --bg-overlay:   #ffffff;
+  --bg-inset:     #e4e6f0;
+
+  /* Text */
+  --fg:           #1a1c2e;
+  --fg-muted:     #4a5068;
+  --fg-subtle:    #6b7390;
+  --fg-disabled:  #adb5c0;
+  --fg-on-accent: #ffffff;
+  --fg-link:      #4a5de8;
+
+  /* Border */
+  --border-subtle: #e4e6f0;
+  --border:        #d0d4e8;
+  --border-strong: #4a5068;
+
+  /* Accent — same brand gradient, readable on light */
+  --accent:         #5a4fcf;
+  --accent-hover:   #4540b8;
+  --accent-pressed: #3a35a0;
+  --accent-subtle:  #eceafc;
+  --accent-fg:      #5a4fcf;
+  --accent-start:   #667eea;
+  --accent-end:     #764ba2;
+  --accent-grad:    linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --accent-glow:    rgba(90, 79, 207, 0.20);
+  --accent-glow-strong: rgba(90, 79, 207, 0.35);
+
+  /* Speed metric colors — high visibility on light background */
+  --speed-download: #0277bd;
+  --speed-upload:   #2e7d32;
+  --speed-ping:     #e65100;
+  --speed-jitter:   #6a1b9a;
+  --speed-loss:     #c62828;
+
+  /* Status */
+  --color-success-fg:     #1a7f37;
+  --color-success-bg:     #dafbe1;
+  --color-success-border: #82cfb0;
+
+  --color-warning-fg:     #9a6700;
+  --color-warning-bg:     #fff8c5;
+  --color-warning-border: #d4a72c;
+
+  --color-error-fg:       #d1242f;
+  --color-error-bg:       #ffebe9;
+  --color-error-border:   #cf222e;
+
+  --color-info-fg:        #0969da;
+  --color-info-bg:        #ddf4ff;
+  --color-info-border:    #54aeff;
+
+  /* Progress */
+  --progress-track:   #e4e6f0;
+  --progress-fill:    var(--accent-grad);
+
+  /* Gauge arc colors */
+  --gauge-track:    #e4e6f0;
+  --gauge-fill:     #667eea;
+
+  /* Card / panel chrome */
+  --card-shadow:    0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+  --card-shadow-lg: 0 4px 8px rgba(0,0,0,0.10), 0 12px 32px rgba(0,0,0,0.08);
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(90,79,207,0.30);
+
+  /* Toast */
+  --toast-bg:     #ffffff;
+  --toast-border: #d0d4e8;
+}
+
+/* Auto — light OS preference, no data-theme attribute */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:           #f7f8fc;
+    --bg-subtle:    #eef0f7;
+    --bg-elevated:  #ffffff;
+    --bg-overlay:   #ffffff;
+    --bg-inset:     #e4e6f0;
+    --fg:           #1a1c2e;
+    --fg-muted:     #4a5068;
+    --fg-subtle:    #6b7390;
+    --fg-disabled:  #adb5c0;
+    --fg-on-accent: #ffffff;
+    --fg-link:      #4a5de8;
+    --border-subtle: #e4e6f0;
+    --border:        #d0d4e8;
+    --border-strong: #4a5068;
+    --accent:         #5a4fcf;
+    --accent-hover:   #4540b8;
+    --accent-pressed: #3a35a0;
+    --accent-subtle:  #eceafc;
+    --accent-fg:      #5a4fcf;
+    --accent-start:   #667eea;
+    --accent-end:     #764ba2;
+    --accent-grad:    linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --accent-glow:    rgba(90, 79, 207, 0.20);
+    --accent-glow-strong: rgba(90, 79, 207, 0.35);
+    --speed-download: #0277bd;
+    --speed-upload:   #2e7d32;
+    --speed-ping:     #e65100;
+    --speed-jitter:   #6a1b9a;
+    --speed-loss:     #c62828;
+    --color-success-fg:     #1a7f37;
+    --color-success-bg:     #dafbe1;
+    --color-success-border: #82cfb0;
+    --color-warning-fg:     #9a6700;
+    --color-warning-bg:     #fff8c5;
+    --color-warning-border: #d4a72c;
+    --color-error-fg:       #d1242f;
+    --color-error-bg:       #ffebe9;
+    --color-error-border:   #cf222e;
+    --color-info-fg:        #0969da;
+    --color-info-bg:        #ddf4ff;
+    --color-info-border:    #54aeff;
+    --progress-track:   #e4e6f0;
+    --gauge-track:    #e4e6f0;
+    --gauge-fill:     #667eea;
+    --card-shadow:    0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+    --card-shadow-lg: 0 4px 8px rgba(0,0,0,0.10), 0 12px 32px rgba(0,0,0,0.08);
+    --focus-ring: 0 0 0 3px rgba(90,79,207,0.30);
+    --toast-bg:     #ffffff;
+    --toast-border: #d0d4e8;
+  }
 }

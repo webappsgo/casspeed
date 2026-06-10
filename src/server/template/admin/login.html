@@ -1,16 +1,63 @@
-<!DOCTYPEhtml>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin login - casspeed</title>
+  <title>Admin Login — casspeed</title>
   <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/theme-light.css">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/admin/style.css">
+  <script src="/static/js/theme.js"></script>
 </head>
 <body>
-  <div class="admin-container">
-    <h1>Admin login</h1>
+  <div class="admin-login-wrap">
+    <div class="admin-login-card">
+      <span class="admin-login-card__logo">casspeed</span>
+      <p class="admin-login-card__tagline">Self-hosted Speed Testing</p>
+      <h1 class="admin-login-card__title">Admin Login</h1>
+
+      {{if .Error}}
+      <div class="alert alert--error" role="alert">
+        <span class="alert__icon" aria-hidden="true">✖</span>
+        <span>{{.Error}}</span>
+      </div>
+      {{end}}
+
+      <form class="admin-form" method="POST" action="/server/admin/login" novalidate>
+        <div class="form-group">
+          <label for="username" class="form-label">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            required
+            aria-required="true"
+            placeholder="admin">
+        </div>
+        <div class="form-group">
+          <label for="password" class="form-label">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            aria-required="true"
+            placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn btn--primary" style="width:100%;margin-top:8px">
+          Sign In
+        </button>
+      </form>
+
+      <p style="text-align:center;margin-top:20px">
+        <a href="/" class="btn-link" style="font-size:0.875rem">← Back to Speed Test</a>
+      </p>
+    </div>
   </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="assertive" aria-atomic="false" role="status"></div>
 </body>
 </html>

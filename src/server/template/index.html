@@ -1,78 +1,270 @@
-<!DOCTYPEhtml>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>casspeed - Speed Testing</title>
+  <meta name="description" content="casspeed — test your internet connection speed privately. No accounts required.">
+  <title>casspeed — Speed Test</title>
+
+  <!-- Theme tokens (dark default, light alternate, auto via media query) -->
   <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/theme-light.css">
   <link rel="stylesheet" href="/static/css/style.css">
+
+  <!-- Apply stored theme preference before paint to prevent flash -->
+  <script src="/static/js/theme.js"></script>
 </head>
 <body>
-  <div class="container">
-    <h1>casspeed</h1>
-    <p class="tagline">Self-hosted Speed Testing</p>
-    
-    <button class="test-btn" id="startBtn">START</button>
-    
-    <div class="progress" id="progress">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
+
+  <!-- Skip to main content for keyboard users -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- ── Site header ──────────────────────────────────────────────── -->
+  <header class="site-header" role="banner">
+    <a href="/" class="site-header__brand" aria-label="casspeed home">
+      <span class="site-header__logo" aria-hidden="true">casspeed</span>
+    </a>
+
+    <div class="site-header__actions">
+      <!-- Theme toggle -->
+      <div class="theme-toggle" role="group" aria-label="Color theme">
+        <button
+          class="theme-toggle__btn"
+          data-theme-btn="dark"
+          aria-pressed="true"
+          aria-label="Dark theme"
+          title="Dark theme"
+          type="button">
+          ◐
+        </button>
+        <button
+          class="theme-toggle__btn"
+          data-theme-btn="light"
+          aria-pressed="false"
+          aria-label="Light theme"
+          title="Light theme"
+          type="button">
+          ◑
+        </button>
+        <button
+          class="theme-toggle__btn"
+          data-theme-btn="auto"
+          aria-pressed="false"
+          aria-label="Auto theme (follows system)"
+          title="Auto (system)"
+          type="button">
+          ◎
+        </button>
       </div>
-      <p class="status" id="status">Initializing...</p>
+
+      <!-- Auth links (visible on tablet+) -->
+      <nav class="header-auth" aria-label="Account">
+        <a href="/server/admin/" class="btn-link">Admin</a>
+      </nav>
     </div>
-    
-    <div class="results" id="results">
-      <div class="result-item">
-        <span class="result-label">Download</span>
-        <span class="result-value" id="download">-- Mbps</span>
+  </header>
+
+  <!-- ── Main content ─────────────────────────────────────────────── -->
+  <main id="main-content" class="site-main" aria-label="Speed test">
+
+    <div class="speed-test" role="region" aria-label="Speed test interface">
+
+      <!-- Heading -->
+      <div style="text-align:center">
+        <h1 class="speed-test__title">Test Your Speed</h1>
+        <p class="speed-test__subtitle">Self-hosted, private, no trackers</p>
       </div>
-      <div class="result-item">
-        <span class="result-label">Upload</span>
-        <span class="result-value" id="upload">-- Mbps</span>
+
+      <!-- ── Gauge / live display ────────────────────────────────── -->
+      <div class="gauge-wrap" aria-hidden="true">
+        <svg class="gauge-svg" viewBox="0 0 240 140" role="presentation" focusable="false">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%"   stop-color="#667eea"/>
+              <stop offset="100%" stop-color="#764ba2"/>
+            </linearGradient>
+          </defs>
+          <!-- Semicircular track: center 120,130 radius 100 from 180deg to 0deg -->
+          <path
+            class="gauge__track"
+            d="M 20,130 A 100,100 0 0,1 220,130"
+          />
+          <!-- Animated fill arc -->
+          <path
+            id="gaugeArc"
+            class="gauge__fill"
+            d="M 20,130 A 100,100 0 0,1 220,130"
+          />
+          <!-- Value text -->
+          <text id="gaugeValue" class="gauge__value" x="120" y="108" aria-label="current speed">--</text>
+          <text id="gaugeUnitText" class="gauge__unit" x="120" y="124">Mbps</text>
+          <text id="gaugeLabelText" class="gauge__label" x="120" y="137">Speed</text>
+        </svg>
       </div>
-      <div class="result-item">
-        <span class="result-label">Ping</span>
-        <span class="result-value" id="ping">-- ms</span>
+
+      <!-- Live speed number (screen-reader accessible) -->
+      <div class="live-speed" aria-live="polite" aria-atomic="true">
+        <div id="liveNumber" class="live-speed__number" aria-label="Current speed">--</div>
+        <div id="liveUnit"   class="live-speed__unit">Mbps</div>
+        <div id="liveStage"  class="live-speed__stage" aria-label="Current test phase">&nbsp;</div>
       </div>
-      <div class="result-item">
-        <span class="result-label">Jitter</span>
-        <span class="result-value" id="jitter">-- ms</span>
-      </div>
-    </div>
-  </div>
-  
-  <script>
-    let ws = null;
-    function startTest() {
-      const btn = document.getElementById('startBtn');
-      const progress = document.getElementById('progress');
-      const results = document.getElementById('results');
-      btn.disabled = true;
-      progress.style.display = 'block';
-      results.style.display = 'none';
-      ws = new WebSocket('ws://' + window.location.host + '/api/v1/speedtest/ws');
-      ws.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        if (data.phase) {
-          document.getElementById('status').textContent = data.phase + '...';
-          document.getElementById('progressFill').style.width = data.progress + '%';
-        }
-        if (data.complete) {
-          progress.style.display = 'none';
-          results.style.display = 'block';
-          document.getElementById('download').textContent = data.download_mbps.toFixed(2) + ' Mbps';
-          document.getElementById('upload').textContent = data.upload_mbps.toFixed(2) + ' Mbps';
-          document.getElementById('ping').textContent = data.ping_ms.toFixed(1) + ' ms';
-          document.getElementById('jitter').textContent = data.jitter_ms.toFixed(1) + ' ms';
-          btn.disabled = false;
-        }
-      };
-      ws.onerror = function() {
-        document.getElementById('status').textContent = 'Connection error';
-        btn.disabled = false;
-      };
-    }
-    document.getElementById('startBtn').addEventListener('click', startTest);
-  </script>
+
+      <!-- ── START button ────────────────────────────────────────── -->
+      <button
+        id="startBtn"
+        class="start-btn start-btn--idle"
+        type="button"
+        aria-label="Start speed test">
+        START
+      </button>
+
+      <!-- Test Again button (hidden until test completes) -->
+      <button
+        id="testAgainBtn"
+        class="test-again-btn"
+        type="button"
+        style="display:none"
+        aria-label="Run another speed test">
+        Test Again
+      </button>
+
+      <!-- ── Progress section ─────────────────────────────────────── -->
+      <section
+        id="progressSection"
+        class="progress-section"
+        aria-label="Test progress"
+        aria-live="polite">
+
+        <div class="progress-label">
+          <span id="progressStage" class="progress-stage" aria-live="polite">Connecting</span>
+          <span id="progressPct"   class="progress-pct"   aria-label="Percent complete">0%</span>
+        </div>
+
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Overall test progress" id="progressBar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+
+        <!-- Phase step indicators -->
+        <div class="phase-steps" aria-hidden="true">
+          <div class="phase-step" data-phase="ping">
+            <div class="phase-step__dot"></div>
+            <span class="phase-step__name">Ping</span>
+          </div>
+          <div class="phase-step" data-phase="download">
+            <div class="phase-step__dot"></div>
+            <span class="phase-step__name">Download</span>
+          </div>
+          <div class="phase-step" data-phase="upload">
+            <div class="phase-step__dot"></div>
+            <span class="phase-step__name">Upload</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Status message ────────────────────────────────────────── -->
+      <p id="statusMsg" class="status-msg" aria-live="polite" aria-atomic="true"></p>
+
+      <!-- ── Results section ─────────────────────────────────────── -->
+      <section
+        id="resultsSection"
+        class="results-section"
+        aria-label="Test results"
+        aria-live="polite">
+
+        <!-- Primary: download + upload -->
+        <div class="result-primary">
+          <div class="result-card result-card--download">
+            <span class="result-card__icon" aria-hidden="true">↓</span>
+            <div class="result-card__label">Download</div>
+            <div id="dlValue" class="result-card__value" aria-label="Download speed">--</div>
+            <div class="result-card__unit">Mbps</div>
+          </div>
+          <div class="result-card result-card--upload">
+            <span class="result-card__icon" aria-hidden="true">↑</span>
+            <div class="result-card__label">Upload</div>
+            <div id="ulValue" class="result-card__value" aria-label="Upload speed">--</div>
+            <div class="result-card__unit">Mbps</div>
+          </div>
+        </div>
+
+        <!-- Secondary: ping, jitter, packet loss -->
+        <div class="result-secondary">
+          <div class="result-card result-card--sm result-card--ping">
+            <div class="result-card__label">Ping</div>
+            <div id="pingValue" class="result-card__value" aria-label="Ping latency">--</div>
+            <div class="result-card__unit">ms</div>
+          </div>
+          <div class="result-card result-card--sm result-card--jitter">
+            <div class="result-card__label">Jitter</div>
+            <div id="jitterValue" class="result-card__value" aria-label="Jitter">--</div>
+            <div class="result-card__unit">ms</div>
+          </div>
+          <div class="result-card result-card--sm result-card--loss">
+            <div class="result-card__label">Packet loss</div>
+            <div id="lossValue" class="result-card__value" aria-label="Packet loss">--</div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ── Share section (shown after test) ─────────────────────── -->
+      <section
+        id="shareSection"
+        class="share-section"
+        aria-label="Share result">
+
+        <p class="share-section__title">Share your result</p>
+
+        <div class="share-url" role="group" aria-label="Share URL">
+          <input
+            id="shareInput"
+            class="share-url__input share-code"
+            type="text"
+            readonly
+            aria-label="Shareable result URL"
+            placeholder="Share link will appear here…">
+          <button
+            id="shareCopyBtn"
+            class="share-url__copy"
+            type="button"
+            aria-label="Copy share link to clipboard">
+            Copy
+          </button>
+        </div>
+
+      </section>
+
+      <!-- ── No-JS fallback form ─────────────────────────────────── -->
+      <!-- Progressive enhancement: shown when JS is unavailable     -->
+      <noscript>
+        <div class="nojs-fallback" id="noJsFallback">
+          <p>JavaScript is required for the real-time speed test.</p>
+          <p>Enable JavaScript in your browser to run a test, or use the REST API at <code>/api/v1/speed-tests</code>.</p>
+        </div>
+      </noscript>
+      <!-- JS hides this element; noscript keeps it visible without JS -->
+      <div id="noJsFallback" class="nojs-fallback" aria-hidden="true"></div>
+
+    </div><!-- /.speed-test -->
+
+  </main>
+
+  <!-- ── Site footer ─────────────────────────────────────────────── -->
+  <footer class="site-footer" role="contentinfo">
+    <p>
+      <a href="/server/admin/" aria-label="Admin panel">Admin</a>
+      &middot;
+      <a href="/openapi" aria-label="API documentation">API</a>
+      &middot;
+      <span class="text-subtle">casspeed</span>
+    </p>
+  </footer>
+
+  <!-- ── Toast container ─────────────────────────────────────────── -->
+  <div id="toastContainer" class="toast-container" aria-live="assertive" aria-atomic="false" role="status"></div>
+
+  <!-- ── App JS ──────────────────────────────────────────────────── -->
+  <script src="/static/js/app.js"></script>
+
 </body>
 </html>

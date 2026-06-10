@@ -1,10 +1,134 @@
-/* Dark Theme (Default) */
-:root {
-  --bg-color: #1a1a1a;
-  --text-color: #e0e0e0;
-  --text-muted: #888;
-  --border-color: #333;
-  --link-color: #66b3ff;
-  --hover-color: #2a2a2a;
-  --progress-bg: #333;
+/* casspeed — Dark theme (default) */
+
+:root[data-theme="dark"],
+:root:not([data-theme]) {
+  /* Surface */
+  --bg:           #0a0b0f;
+  --bg-subtle:    #111318;
+  --bg-elevated:  #1a1d26;
+  --bg-overlay:   #242736;
+  --bg-inset:     #050608;
+
+  /* Text */
+  --fg:           #e8ecf4;
+  --fg-muted:     #8b949e;
+  --fg-subtle:    #6e7681;
+  --fg-disabled:  #484f58;
+  --fg-on-accent: #ffffff;
+  --fg-link:      #79b8ff;
+
+  /* Border */
+  --border-subtle: #1a1d26;
+  --border:        #2d3143;
+  --border-strong: #8b949e;
+
+  /* Accent — purple-to-blue brand gradient tokens */
+  --accent:         #7c6bea;
+  --accent-hover:   #9b8df5;
+  --accent-pressed: #5e4fd4;
+  --accent-subtle:  #2a2550;
+  --accent-fg:      #9b8df5;
+  --accent-start:   #667eea;
+  --accent-end:     #764ba2;
+  --accent-grad:    linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --accent-glow:    rgba(102, 126, 234, 0.35);
+  --accent-glow-strong: rgba(102, 126, 234, 0.55);
+
+  /* Speed metric colors — high visibility on dark background */
+  --speed-download: #4fc3f7;
+  --speed-upload:   #81c784;
+  --speed-ping:     #ffb74d;
+  --speed-jitter:   #ce93d8;
+  --speed-loss:     #f48fb1;
+
+  /* Status */
+  --color-success-fg:     #3fb950;
+  --color-success-bg:     #0f2d1b;
+  --color-success-border: #238636;
+
+  --color-warning-fg:     #e3b341;
+  --color-warning-bg:     #2d2000;
+  --color-warning-border: #9e6a03;
+
+  --color-error-fg:       #f85149;
+  --color-error-bg:       #2d1212;
+  --color-error-border:   #da3633;
+
+  --color-info-fg:        #79b8ff;
+  --color-info-bg:        #1a2340;
+  --color-info-border:    #1f6feb;
+
+  /* Progress */
+  --progress-track:   #1e2130;
+  --progress-fill:    var(--accent-grad);
+
+  /* Gauge arc colors */
+  --gauge-track:    #1e2130;
+  --gauge-fill:     var(--accent-start);
+
+  /* Card / panel chrome */
+  --card-shadow:    0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4);
+  --card-shadow-lg: 0 4px 8px rgba(0,0,0,0.7), 0 12px 32px rgba(0,0,0,0.5);
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 3px rgba(102,126,234,0.45);
+
+  /* Toast */
+  --toast-bg:     #242736;
+  --toast-border: #2d3143;
+}
+
+/* Auto — dark OS preference, no data-theme attribute */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:           #0a0b0f;
+    --bg-subtle:    #111318;
+    --bg-elevated:  #1a1d26;
+    --bg-overlay:   #242736;
+    --bg-inset:     #050608;
+    --fg:           #e8ecf4;
+    --fg-muted:     #8b949e;
+    --fg-subtle:    #6e7681;
+    --fg-disabled:  #484f58;
+    --fg-on-accent: #ffffff;
+    --fg-link:      #79b8ff;
+    --border-subtle: #1a1d26;
+    --border:        #2d3143;
+    --border-strong: #8b949e;
+    --accent:         #7c6bea;
+    --accent-hover:   #9b8df5;
+    --accent-pressed: #5e4fd4;
+    --accent-subtle:  #2a2550;
+    --accent-fg:      #9b8df5;
+    --accent-start:   #667eea;
+    --accent-end:     #764ba2;
+    --accent-grad:    linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --accent-glow:    rgba(102, 126, 234, 0.35);
+    --accent-glow-strong: rgba(102, 126, 234, 0.55);
+    --speed-download: #4fc3f7;
+    --speed-upload:   #81c784;
+    --speed-ping:     #ffb74d;
+    --speed-jitter:   #ce93d8;
+    --speed-loss:     #f48fb1;
+    --color-success-fg:     #3fb950;
+    --color-success-bg:     #0f2d1b;
+    --color-success-border: #238636;
+    --color-warning-fg:     #e3b341;
+    --color-warning-bg:     #2d2000;
+    --color-warning-border: #9e6a03;
+    --color-error-fg:       #f85149;
+    --color-error-bg:       #2d1212;
+    --color-error-border:   #da3633;
+    --color-info-fg:        #79b8ff;
+    --color-info-bg:        #1a2340;
+    --color-info-border:    #1f6feb;
+    --progress-track:   #1e2130;
+    --gauge-track:    #1e2130;
+    --gauge-fill:     #667eea;
+    --card-shadow:    0 1px 3px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4);
+    --card-shadow-lg: 0 4px 8px rgba(0,0,0,0.7), 0 12px 32px rgba(0,0,0,0.5);
+    --focus-ring: 0 0 0 3px rgba(102,126,234,0.45);
+    --toast-bg:     #242736;
+    --toast-border: #2d3143;
+  }
 }
