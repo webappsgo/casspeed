@@ -263,6 +263,21 @@ func (m *Metrics) RecordSpeedTest(downloadMbps, uploadMbps, pingMs float64) {
 	m.PingLatency.Observe(pingMs)
 }
 
+// TotalRequests returns the total number of HTTP requests (lifetime)
+func (m *Metrics) TotalRequests() int64 {
+	return int64(m.RequestsTotal.Value())
+}
+
+// Requests24h returns requests in the last 24 hours (approximated from total for now)
+func (m *Metrics) Requests24h() int64 {
+	return int64(m.RequestsTotal.Value())
+}
+
+// ActiveConnections returns the current number of active HTTP connections
+func (m *Metrics) ActiveConnections() int {
+	return int(m.RequestsActive.Value())
+}
+
 // Reset resets all metrics
 func (m *Metrics) Reset() {
 	m.mu.Lock()

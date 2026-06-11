@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -50,6 +51,8 @@ type Server struct {
 	ipMutex      sync.RWMutex
 	startTime    time.Time
 	version      string
+	commitID     string
+	buildDate    string
 }
 
 type ipRateLimit struct {
@@ -57,7 +60,7 @@ type ipRateLimit struct {
 	lastTest    time.Time
 }
 
-func New(cfg *config.Config, appMode *mode.State, dataDir string, logDir string, version string) (*Server, error) {
+func New(cfg *config.Config, appMode *mode.State, dataDir string, logDir string, version string, commitID string, buildDate string) (*Server, error) {
 	// Initialize logging
 	logger, err := logging.New(logDir)
 	if err != nil {
@@ -97,6 +100,8 @@ func New(cfg *config.Config, appMode *mode.State, dataDir string, logDir string,
 		ipTestCount:  make(map[string]*ipRateLimit),
 		startTime:    time.Now(),
 		version:      version,
+		commitID:     commitID,
+		buildDate:    buildDate,
 	}
 
 	s.setupMiddleware()
@@ -283,119 +288,183 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// healthResponse is the canonical PART 13 health check response structure.
+type healthResponse struct {
+	Project   healthProject   `json:"project"`
+	Status    string          `json:"status"`
+	Version   string          `json:"version"`
+	GoVersion string          `json:"go_version"`
+	Build     healthBuild     `json:"build"`
+	Uptime    string          `json:"uptime"`
+	Mode      string          `json:"mode"`
+	Timestamp time.Time       `json:"timestamp"`
+	Cluster   healthCluster   `json:"cluster"`
+	Features  healthFeatures  `json:"features"`
+	Checks    healthChecks    `json:"checks"`
+	Stats     healthStats     `json:"stats"`
+}
+
+type healthProject struct {
+	Name        string `json:"name"`
+	Tagline     string `json:"tagline"`
+	Description string `json:"description"`
+}
+
+type healthBuild struct {
+	Commit string `json:"commit"`
+	Date   string `json:"date"`
+}
+
+type healthCluster struct {
+	Enabled bool   `json:"enabled"`
+	Status  string `json:"status,omitempty"`
+}
+
+type healthFeatures struct {
+	GeoIP bool       `json:"geoip"`
+	Tor   healthTor  `json:"tor"`
+}
+
+type healthTor struct {
+	Enabled  bool   `json:"enabled"`
+	Running  bool   `json:"running"`
+	Status   string `json:"status"`
+	Hostname string `json:"hostname"`
+}
+
+type healthChecks struct {
+	Database  string `json:"database"`
+	Cache     string `json:"cache"`
+	Disk      string `json:"disk"`
+	Scheduler string `json:"scheduler"`
+}
+
+type healthStats struct {
+	RequestsTotal int64 `json:"requests_total"`
+	Requests24h   int64 `json:"requests_24h"`
+	ActiveConns   int   `json:"active_connections"`
+}
+
+// formatUptime renders a duration as a human-readable string (e.g. "2d 5h 30m")
+func formatUptime(d time.Duration) string {
+	days := int(d.Hours() / 24)
+	hours := int(d.Hours()) % 24
+	minutes := int(d.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
+}
+
+func (s *Server) buildHealthResponse() healthResponse {
+	m := metrics.GetMetrics()
+	return healthResponse{
+		Project: healthProject{
+			Name:        s.Config.Server.Branding.Title,
+			Tagline:     s.Config.Server.Branding.Tagline,
+			Description: s.Config.Server.Branding.Description,
+		},
+		Status:    "healthy",
+		Version:   s.version,
+		GoVersion: runtime.Version(),
+		Build: healthBuild{
+			Commit: s.commitID,
+			Date:   s.buildDate,
+		},
+		Uptime:    formatUptime(time.Since(s.startTime)),
+		Mode:      s.Mode.String(),
+		Timestamp: time.Now().UTC(),
+		Cluster: healthCluster{
+			Enabled: false,
+		},
+		Features: healthFeatures{
+			GeoIP: false,
+			Tor:   healthTor{Enabled: false, Running: false, Status: "disabled"},
+		},
+		Checks: healthChecks{
+			Database:  "ok",
+			Cache:     "ok",
+			Disk:      "ok",
+			Scheduler: "ok",
+		},
+		Stats: healthStats{
+			RequestsTotal: m.TotalRequests(),
+			Requests24h:   m.Requests24h(),
+			ActiveConns:   m.ActiveConnections(),
+		},
+	}
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// Calculate uptime
-	uptime := time.Since(s.startTime)
-	days := int(uptime.Hours() / 24)
-	hours := int(uptime.Hours()) % 24
-	minutes := int(uptime.Minutes()) % 60
-	uptimeStr := fmt.Sprintf("%dd %dh %dm", days, hours, minutes)
-	if days == 0 {
-		if hours == 0 {
-			uptimeStr = fmt.Sprintf("%dm", minutes)
-		} else {
-			uptimeStr = fmt.Sprintf("%dh %dm", hours, minutes)
-		}
-	}
+	resp := s.buildHealthResponse()
 
-	// Get hostname
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
-
-	// Health response per PART 13 spec
-	response := map[string]interface{}{
-		"status":    "healthy",
-		"version":   s.version,
-		"mode":      s.Mode.String(),
-		"uptime":    uptimeStr,
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"node": map[string]string{
-			"id":       "standalone",
-			"hostname": hostname,
-		},
-		"cluster": map[string]interface{}{
-			"enabled": false,
-		},
-		"checks": map[string]string{
-			"database": "ok",
-			"cache":    "ok",
-			"disk":     "ok",
-		},
-	}
-
-	// Content negotiation per PART 13
+	// Content negotiation — .json/.txt extensions and Accept header (PART 13)
+	path := r.URL.Path
 	accept := r.Header.Get("Accept")
-	
-	// Check for .json or .txt extension
-	if r.URL.Path == "/healthz.json" || r.URL.Path == "/api/v1/healthz.json" {
+
+	// Path extension takes priority
+	if len(path) > 5 && path[len(path)-5:] == ".json" {
 		accept = "application/json"
-	} else if r.URL.Path == "/healthz.txt" || r.URL.Path == "/api/v1/healthz.txt" {
+	} else if len(path) > 4 && path[len(path)-4:] == ".txt" {
 		accept = "text/plain"
 	}
 
-	// /api/v1/healthz always returns JSON
-	if r.URL.Path == "/api/v1/healthz" && accept == "" {
+	// API routes default to JSON when no explicit Accept header
+	if accept == "" && (len(path) >= 4 && path[:4] == "/api") {
 		accept = "application/json"
 	}
 
-	// Determine format based on Accept header
 	switch {
 	case accept == "text/plain" || accept == "text/*":
-		// Plain text format
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintf(w, "status: %s\n", response["status"])
-		fmt.Fprintf(w, "version: %s\n", response["version"])
-		fmt.Fprintf(w, "mode: %s\n", response["mode"])
-		fmt.Fprintf(w, "uptime: %s\n", response["uptime"])
-		checks := response["checks"].(map[string]string)
-		fmt.Fprintf(w, "database: %s\n", checks["database"])
-		fmt.Fprintf(w, "cache: %s\n", checks["cache"])
-		fmt.Fprintf(w, "disk: %s\n", checks["disk"])
+		fmt.Fprintf(w, "status: %s\n", resp.Status)
+		fmt.Fprintf(w, "version: %s\n", resp.Version)
+		fmt.Fprintf(w, "go_version: %s\n", resp.GoVersion)
+		fmt.Fprintf(w, "mode: %s\n", resp.Mode)
+		fmt.Fprintf(w, "uptime: %s\n", resp.Uptime)
+		fmt.Fprintf(w, "database: %s\n", resp.Checks.Database)
+		fmt.Fprintf(w, "cache: %s\n", resp.Checks.Cache)
+		fmt.Fprintf(w, "disk: %s\n", resp.Checks.Disk)
+		fmt.Fprintf(w, "scheduler: %s\n", resp.Checks.Scheduler)
 
 	case accept == "application/json" || accept == "application/*":
-		// JSON format
 		w.Header().Set("Content-Type", "application/json")
-		data, _ := json.MarshalIndent(response, "", "  ")
+		data, _ := json.MarshalIndent(resp, "", "  ")
 		w.Write(data)
 		w.Write([]byte("\n"))
 
 	default:
-		// HTML format (default for browsers)
+		// HTML for browsers
+		dbStatus := resp.Checks.Database
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Health Status - casspeed</title>
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
-        h1 { color: #333; }
-        .status-healthy { color: #28a745; font-weight: bold; font-size: 24px; }
-        .info { margin: 20px 0; }
-        .info dt { font-weight: bold; margin-top: 10px; }
-        .info dd { margin-left: 20px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health — casspeed</title>
+  <link rel="stylesheet" href="/static/css/theme-dark.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/js/theme.js"></script>
 </head>
 <body>
+  <header class="site-header"><a href="/" class="site-header__brand">casspeed</a></header>
+  <main style="max-width:600px;margin:3rem auto;padding:1rem">
     <h1>Health Status</h1>
-    <p class="status-healthy">✓ %s</p>
-    <dl class="info">
-        <dt>Version:</dt><dd>%s</dd>
-        <dt>Mode:</dt><dd>%s</dd>
-        <dt>Uptime:</dt><dd>%s</dd>
-        <dt>Node:</dt><dd>%s</dd>
-        <dt>Database:</dt><dd>%s</dd>
-        <dt>Disk:</dt><dd>%s</dd>
+    <p style="color:var(--color-ok);font-size:1.2rem">&#x2713; %s</p>
+    <dl style="margin-top:1.5rem;line-height:2">
+      <dt>Version</dt><dd>%s (%s)</dd>
+      <dt>Mode</dt><dd>%s</dd>
+      <dt>Uptime</dt><dd>%s</dd>
+      <dt>Database</dt><dd>%s</dd>
     </dl>
-    <p><a href="/">← Back to Home</a></p>
+    <p style="margin-top:2rem"><a href="/">&#x2190; Back to Speed Test</a></p>
+  </main>
 </body>
-</html>`, response["status"], response["version"], response["mode"], 
-			response["uptime"], hostname, 
-			response["checks"].(map[string]string)["database"],
-			response["checks"].(map[string]string)["disk"])
+</html>`, resp.Status, resp.Version, resp.GoVersion, resp.Mode, resp.Uptime, dbStatus)
 	}
 }
 

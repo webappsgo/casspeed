@@ -156,6 +156,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Apply env var fallbacks for directory flags (PART 12 spec requirement)
+	// Priority: CLI flag > environment variable > auto-detect
+	if configDir == "" {
+		configDir = os.Getenv("CONFIG_DIR")
+	}
+	if dataDir == "" {
+		dataDir = os.Getenv("DATA_DIR")
+	}
+	if cacheDir == "" {
+		cacheDir = os.Getenv("CACHE_DIR")
+	}
+	if logDir == "" {
+		logDir = os.Getenv("LOG_DIR")
+	}
+	if backupDir == "" {
+		backupDir = os.Getenv("BACKUP_DIR")
+	}
+	if pidFile == "" {
+		pidFile = os.Getenv("PID_FILE")
+	}
+	if address == "" {
+		address = os.Getenv("LISTEN")
+	}
+	if portFlag == "" {
+		portFlag = os.Getenv("PORT")
+	}
+	if modeFlag == "" && os.Getenv("MODE") != "" {
+		modeFlag = os.Getenv("MODE")
+	}
+
 	// Detect paths
 	appPaths, err := paths.Detect(configDir, dataDir, cacheDir, logDir, backupDir)
 	if err != nil {
@@ -166,6 +196,11 @@ func main() {
 	// Set PID file if specified
 	if pidFile != "" {
 		appPaths.PID = pidFile
+	}
+
+	// Override DB dir if DATABASE_DIR env is set (PART 12 - Docker: /data/db/sqlite)
+	if dbDir := os.Getenv("DATABASE_DIR"); dbDir != "" {
+		appPaths.DB = dbDir
 	}
 
 	// Ensure all directories exist
@@ -245,7 +280,7 @@ func main() {
 	}
 
 	// Create and start server
-	srv, err := server.New(cfg, appMode, appPaths.Data, appPaths.Log, Version)
+	srv, err := server.New(cfg, appMode, appPaths.Data, appPaths.Log, Version, CommitID, BuildDate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server initialization error: %v\n", err)
 		os.Exit(1)
