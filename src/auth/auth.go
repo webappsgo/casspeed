@@ -2,6 +2,7 @@ package auth
 
 import (
 "crypto/rand"
+"crypto/subtle"
 "encoding/hex"
 "fmt"
 "time"
@@ -42,18 +43,8 @@ return false
 // Hash provided password with same salt
 hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
 
-// Compare
-if len(hash) != len(expectedHash) {
-return false
-}
-
-for i := 0; i < len(hash); i++ {
-if hash[i] != expectedHash[i] {
-return false
-}
-}
-
-return true
+// Constant-time comparison prevents timing attacks (PART 11 security requirement)
+return subtle.ConstantTimeCompare(hash, expectedHash) == 1
 }
 
 // GenerateSessionID generates a random session ID

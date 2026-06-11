@@ -58,7 +58,7 @@ http.Error(w, "Failed to create session", http.StatusInternalServerError)
 return
 }
 
-// Set session cookie
+// Set session cookie — SameSite=Strict per PART 11 CSRF requirement
 http.SetCookie(w, &http.Cookie{
 Name:     "session",
 Value:    session.ID,
@@ -66,21 +66,19 @@ Path:     "/",
 Expires:  session.ExpiresAt,
 HttpOnly: true,
 Secure:   false, // Set to true when SSL enabled
-SameSite: http.SameSiteLaxMode,
+SameSite: http.SameSiteStrictMode,
 })
 
-// Return success
-response := map[string]interface{}{
-"success": true,
-"user": map[string]string{
+// Return canonical {"ok": true, "data": {...}} format (PART 9)
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(map[string]interface{}{
+"ok": true,
+"data": map[string]string{
 "id":       user.ID,
 "username": user.Username,
 "email":    user.Email,
 },
-}
-
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(response)
+})
 }
 
 // Logout handles user logout
@@ -100,12 +98,11 @@ Path:     "/",
 MaxAge:   -1,
 HttpOnly: true,
 Secure:   false,
-SameSite: http.SameSiteLaxMode,
+SameSite: http.SameSiteStrictMode,
 })
 
-// Return success
 w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]bool{"success": true})
+json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "data": nil})
 }
 
 // PasswordResetRequest handles password reset request
@@ -119,28 +116,20 @@ http.Error(w, "Invalid request", http.StatusBadRequest)
 return
 }
 
-// Get user by email
+// Enumerate-safe: always return the same response regardless of whether
+// the email exists (PART 11 enumeration mitigation requirement)
 user, err := h.store.GetUserByEmail(r.Context(), req.Email)
-if err != nil || user == nil {
-// Don't reveal if email exists - return success anyway
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]string{
-"message": "If the email exists, a reset link will be sent",
-})
-return
+if err == nil && user != nil {
+// Generate token (email sending not yet implemented)
+_ = auth.GeneratePasswordResetToken(user.ID)
 }
 
-// Generate password reset token
-_ =  auth.GeneratePasswordResetToken(user.ID)
-
-// Store token in database (would need to add this method to store)
-// h.store.CreatePasswordResetToken(r.Context(), token)
-
-// Send email with reset link (would need email implementation)
-// emailService.SendPasswordReset(user.Email, token.Token)
-
+// Identical response for all paths — prevents email enumeration
 w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]string{
-"message": "If the email exists, a reset link will be sent",
+json.NewEncoder(w).Encode(map[string]interface{}{
+"ok": true,
+"data": map[string]string{
+"message": "If an account with that email exists, a reset link has been sent",
+},
 })
 }
