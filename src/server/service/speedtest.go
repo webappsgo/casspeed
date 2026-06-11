@@ -35,10 +35,18 @@ type TestResult struct {
 }
 
 type ProgressUpdate struct {
-	Stage    string  `json:"stage"`
-	Progress float64 `json:"progress"`
-	Speed    float64 `json:"speed"`
-	Message  string  `json:"message"`
+	Stage        string  `json:"stage"`
+	Progress     float64 `json:"progress"`
+	Speed        float64 `json:"speed"`
+	Message      string  `json:"message"`
+	// Final result fields — only set when Stage == "complete"
+	TestID       string  `json:"test_id,omitempty"`
+	ShareCode    string  `json:"share_code,omitempty"`
+	DownloadMbps float64 `json:"download_mbps,omitempty"`
+	UploadMbps   float64 `json:"upload_mbps,omitempty"`
+	PingMs       float64 `json:"ping_ms,omitempty"`
+	JitterMs     float64 `json:"jitter_ms,omitempty"`
+	PacketLoss   float64 `json:"packet_loss,omitempty"`
 }
 
 func (s *SpeedTestService) RunTest(duration int, progressChan chan<- ProgressUpdate) (*TestResult, error) {

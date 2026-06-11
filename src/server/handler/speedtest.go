@@ -31,14 +31,14 @@ func NewSpeedTestHandler(st store.Store, svc *service.SpeedTestService) *SpeedTe
 
 func (h *SpeedTestHandler) StartTest(w http.ResponseWriter, r *http.Request) {
 	testID := service.GenerateTestID()
-	
-	response := map[string]string{
-		"test_id": testID,
-		"status":  "started",
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.MarshalIndent(response, "", "  ")
+	data, _ := json.MarshalIndent(map[string]interface{}{
+		"ok": true,
+		"data": map[string]string{
+			"test_id": testID,
+			"status":  "started",
+		},
+	}, "", "  ")
 	w.Write(data)
 	w.Write([]byte("\n"))
 }
@@ -55,7 +55,7 @@ func (h *SpeedTestHandler) TestStatus(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		result, _ := h.service.RunTest(10, progressChan)
-		
+
 		testID := service.GenerateTestID()
 		shareCode := ""
 		if r.URL.Query().Get("share") != "false" {
@@ -78,10 +78,18 @@ func (h *SpeedTestHandler) TestStatus(w http.ResponseWriter, r *http.Request) {
 
 		h.store.CreateSpeedTest(r.Context(), test)
 
+		// Send complete message with all result fields so the frontend can display them
 		finalUpdate := service.ProgressUpdate{
-			Stage:    "complete",
-			Progress: 1.0,
-			Message:  "Test complete",
+			Stage:        "complete",
+			Progress:     1.0,
+			Message:      "Test complete",
+			TestID:       testID,
+			ShareCode:    shareCode,
+			DownloadMbps: result.DownloadMbps,
+			UploadMbps:   result.UploadMbps,
+			PingMs:       result.PingMs,
+			JitterMs:     result.JitterMs,
+			PacketLoss:   result.PacketLoss,
 		}
 		progressChan <- finalUpdate
 		close(progressChan)
@@ -102,15 +110,18 @@ func (h *SpeedTestHandler) Download(w http.ResponseWriter, r *http.Request) {
 func (h *SpeedTestHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	totalBytes, err := h.service.ConsumeUploadData(r)
 	if err != nil {
-		http.Error(w, "Upload failed", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "error": "SERVER_ERROR", "message": "Upload failed",
+		})
 		return
 	}
 
-	response := map[string]int64{"bytes": totalBytes}
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.MarshalIndent(response, "", "  ")
-	w.Write(data)
-	w.Write([]byte("\n"))
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "data": map[string]int64{"bytes": totalBytes},
+	})
 }
 
 func (h *SpeedTestHandler) GetResult(w http.ResponseWriter, r *http.Request) {
@@ -118,19 +129,25 @@ func (h *SpeedTestHandler) GetResult(w http.ResponseWriter, r *http.Request) {
 
 	test, err := h.store.GetSpeedTest(r.Context(), testID)
 	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "error": "SERVER_ERROR", "message": "Internal server error",
+		})
 		return
 	}
 
 	if test == nil {
-		http.Error(w, "Test not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "error": "NOT_FOUND", "message": "Resource not found",
+		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.MarshalIndent(test, "", "  ")
-	w.Write(data)
-	w.Write([]byte("\n"))
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "data": test})
 }
 
 func (h *SpeedTestHandler) GetShare(w http.ResponseWriter, r *http.Request) {
@@ -170,20 +187,22 @@ func (h *SpeedTestHandler) GetShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SpeedTestHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
-	userID := r.URL.Query().Get("user_id")
-	if userID == "" {
-		http.Error(w, "User ID required", http.StatusBadRequest)
+	// Public recent results (anonymous — no auth needed for public leaderboard)
+	// Authenticated users get their own history via session (future: auth middleware)
+	tests, err := h.store.GetUserSpeedTests(r.Context(), "", 50, 0)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false, "error": "SERVER_ERROR", "message": "Internal server error",
+		})
 		return
 	}
 
-	tests, err := h.store.GetUserSpeedTests(r.Context(), userID, 50, 0)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
+	if tests == nil {
+		tests = []*model.SpeedTest{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	data, _ := json.MarshalIndent(tests, "", "  ")
-	w.Write(data)
-	w.Write([]byte("\n"))
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "data": tests})
 }

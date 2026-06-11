@@ -287,8 +287,18 @@ func (s *SQLiteStore) GetSpeedTestByShareCode(ctx context.Context, shareCode str
 }
 
 func (s *SQLiteStore) GetUserSpeedTests(ctx context.Context, userID string, limit, offset int) ([]*model.SpeedTest, error) {
-	query := `SELECT id, user_id, device_id, timestamp, download_mbps, upload_mbps, ping_ms, jitter_ms, packet_loss, client_ip_hash, user_agent, server_id, share_code, share_views, created_at FROM speed_tests WHERE user_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`
-	rows, err := s.db.QueryContext(ctx, query, userID, limit, offset)
+	var rows *sql.Rows
+	var err error
+	if userID == "" {
+		// No user filter — return recent public results
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, user_id, device_id, timestamp, download_mbps, upload_mbps, ping_ms, jitter_ms, packet_loss, client_ip_hash, user_agent, server_id, share_code, share_views, created_at FROM speed_tests ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+			limit, offset)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT id, user_id, device_id, timestamp, download_mbps, upload_mbps, ping_ms, jitter_ms, packet_loss, client_ip_hash, user_agent, server_id, share_code, share_views, created_at FROM speed_tests WHERE user_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+			userID, limit, offset)
+	}
 	if err != nil {
 		return nil, err
 	}
