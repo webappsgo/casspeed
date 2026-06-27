@@ -101,3 +101,14 @@ Data Location:
 - Database: `{data_dir}/casapps/casspeed/casspeed.db`
 - Logs: `{log_dir}/casapps/casspeed/`
 - Backups: `{backup_dir}/casapps/casspeed/`
+
+## Business Logic
+
+### Coverage Threshold
+
+Test coverage threshold: **50%**
+
+Rationale: The project includes a bubbletea TUI client (`src/client/`, `src/client/tui/`) that requires
+an interactive terminal and cannot be meaningfully unit-tested, and a main entry point (`src/`) that
+requires OS signals and flag parsing. These packages are tested via integration tests in `tests/`.
+The 50% threshold applies to `go test -cover ./...` measured across all packages including those.
