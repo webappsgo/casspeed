@@ -141,6 +141,9 @@ func (s *Server) setupMiddleware() {
 		MaxAge:           300,
 	})
 	s.Router.Use(corsHandler.Handler)
+
+	// Debug middleware — no-op unless --debug/DEBUG=true (PART 6)
+	s.Router.Use(s.debugMiddleware)
 }
 
 func (s *Server) setupRoutes() {
@@ -274,6 +277,9 @@ func (s *Server) setupRoutes() {
 	// GraphQL
 	s.Router.Get("/graphql", graphql.Handler)
 	s.Router.Post("/graphql/query", graphql.QueryHandler)
+
+	// Debug endpoints (only registered when --debug / DEBUG=true) (PART 6)
+	s.registerDebugRoutes(s.Router)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

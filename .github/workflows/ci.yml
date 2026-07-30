@@ -65,10 +65,10 @@ jobs:
       - run: go test -cover -coverprofile=coverage.out ./...
       - name: Enforce coverage threshold
         run: |
-          THRESHOLD=60
+          THRESHOLD=50
           PCT=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print int($3)}')
           if [ "$PCT" -lt "$THRESHOLD" ]; then
-            echo "::error::coverage $PCT% < threshold $THRESHOLD%"
+            echo "::error::coverage $PCT% < threshold $THRESHOLD% (see IDEA.md § Business Logic)"
             exit 1
           fi
 

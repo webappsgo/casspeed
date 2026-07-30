@@ -3,6 +3,7 @@ package mode
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/casapps/casspeed/src/config"
@@ -66,6 +67,15 @@ func Detect(modeFlag, debugFlag string) (*State, error) {
 			}
 			state.Debug = debug
 		}
+	}
+
+	// Apply runtime profiling rates based on debug flag (PART 6)
+	if state.Debug {
+		runtime.SetBlockProfileRate(1)
+		runtime.SetMutexProfileFraction(1)
+	} else {
+		runtime.SetBlockProfileRate(0)
+		runtime.SetMutexProfileFraction(0)
 	}
 
 	return state, nil

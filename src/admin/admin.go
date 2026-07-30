@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -47,15 +48,8 @@ func VerifyPassword(password, stored string) bool {
 	storedHash, _ := hex.DecodeString(hashHex)
 	hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
 	
-	if len(hash) != len(storedHash) {
-		return false
-	}
-	for i := range hash {
-		if hash[i] != storedHash[i] {
-			return false
-		}
-	}
-	return true
+	// Constant-time comparison prevents timing attacks (PART 11)
+	return subtle.ConstantTimeCompare(hash, storedHash) == 1
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +132,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	// Redirect to admin dashboard (root of admin panel per PART 17)
 	// Note: Path is dynamic but we use /admin/ as default here
 	// In production, this should use the configured admin path
-	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+	http.Redirect(w, r, "/server/admin/", http.StatusSeeOther)
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -152,12 +146,12 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session",
 		Value:    "",
-		Path:     "/admin",
+		Path:     "/server/admin",
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
 
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
 }
 
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
@@ -209,13 +203,13 @@ func (h *Handler) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 		
 		cookie, err := r.Cookie("admin_session")
 		if err != nil {
-			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+			http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
 			return
 		}
 
 		session, err := h.store.GetAdminSession(ctx, cookie.Value)
 		if err != nil || session == nil {
-			http.Redirect(w, r, "/admin", http.StatusSeeOther)
+			http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
 			return
 		}
 
@@ -338,58 +332,53 @@ func (h *Handler) ServerUsers(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) renderAdminPage(w http.ResponseWriter, pageID, title string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(`<!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>` + title + ` - casspeed Admin</title>
+	<title>` + title + ` — casspeed Admin</title>
+	<link rel="stylesheet" href="/static/css/theme-dark.css">
+	<link rel="stylesheet" href="/static/css/theme-light.css">
+	<link rel="stylesheet" href="/static/css/style.css">
 	<link rel="stylesheet" href="/static/css/admin/style.css">
+	<script src="/static/js/theme.js"></script>
 </head>
-<body class="admin-layout">
-	<div class="admin-container">
-		<aside class="admin-sidebar">
-			<div class="sidebar-header">
-				<h2>casspeed</h2>
-			</div>
-			<nav class="sidebar-nav">
-				<a href="/admin/" class="nav-item">Dashboard</a>
-				<div class="nav-section">
-					<div class="nav-section-title">Server</div>
-					<a href="/admin/server/settings" class="nav-item">Settings</a>
-					<a href="/admin/server/ssl" class="nav-item">SSL/TLS</a>
-					<a href="/admin/server/email" class="nav-item">Email</a>
-					<a href="/admin/server/scheduler" class="nav-item">Scheduler</a>
-					<a href="/admin/server/logs" class="nav-item">Logs</a>
-					<a href="/admin/server/backup" class="nav-item">Backup</a>
-					<a href="/admin/server/updates" class="nav-item">Updates</a>
-					<a href="/admin/server/info" class="nav-item">Info</a>
-					<a href="/admin/server/metrics" class="nav-item">Metrics</a>
-				</div>
-				<div class="nav-section">
-					<div class="nav-section-title">Network</div>
-					<a href="/admin/server/network/tor" class="nav-item">Tor</a>
-					<a href="/admin/server/network/geoip" class="nav-item">GeoIP</a>
-				</div>
-				<div class="nav-section">
-					<div class="nav-section-title">Security</div>
-					<a href="/admin/server/security/auth" class="nav-item">Authentication</a>
-					<a href="/admin/server/security/tokens" class="nav-item">API Tokens</a>
-				</div>
-			</nav>
-		</aside>
-		<main class="admin-main">
-			<header class="admin-header">
-				<h1>` + title + `</h1>
-				<div class="header-actions">
-					<a href="/admin/profile">Profile</a>
-					<a href="/admin/logout">Logout</a>
-				</div>
-			</header>
-			<div class="admin-content">
-				<p>` + title + ` page content will be displayed here.</p>
-			</div>
+<body>
+<div class="admin-layout">
+	<nav class="admin-nav" aria-label="Admin navigation">
+		<a href="/server/admin/" class="admin-nav__brand">casspeed <span class="admin-nav__badge">Admin</span></a>
+		<div class="admin-nav__section">
+			<ul>
+				<li><a href="/server/admin/">Dashboard</a></li>
+				<li><a href="/server/admin/config/settings">Settings</a></li>
+				<li><a href="/server/admin/config/info">Server Info</a></li>
+				<li><a href="/server/admin/config/logs">Logs</a></li>
+				<li><a href="/server/admin/config/backup">Backup</a></li>
+				<li><a href="/server/admin/config/updates">Updates</a></li>
+				<li><a href="/server/admin/config/ssl">SSL/TLS</a></li>
+				<li><a href="/server/admin/config/email">Email</a></li>
+				<li><a href="/server/admin/config/scheduler">Scheduler</a></li>
+				<li><a href="/server/admin/config/metrics">Metrics</a></li>
+				<li><a href="/server/admin/config/network/tor">Tor</a></li>
+				<li><a href="/server/admin/config/network/geoip">GeoIP</a></li>
+				<li><a href="/server/admin/config/security/auth">Auth</a></li>
+				<li><a href="/server/admin/config/security/tokens">Tokens</a></li>
+				<li><a href="/server/admin/config/users">Users</a></li>
+			</ul>
+		</div>
+		<div class="admin-nav__footer">
+			<a href="/">← Speed Test</a>
+			<a href="/server/admin/logout">Logout</a>
+		</div>
+	</nav>
+	<div class="admin-main">
+		<main id="main-content" class="admin-content" aria-label="` + title + `">
+			<h1 class="admin-page-title">` + title + `</h1>
+			<p>` + title + ` content will be displayed here.</p>
 		</main>
 	</div>
+</div>
+<script src="/static/js/admin.js"></script>
 </body>
 </html>`))
 }

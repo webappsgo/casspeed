@@ -6,11 +6,11 @@ require (
 	// Network/HTTP
 	github.com/go-chi/chi/v5 v5.2.0 // Router
 	github.com/go-chi/cors v1.2.1 // CORS (chi-compatible)
-	github.com/google/uuid v1.6.0 // UUID generation
-	github.com/gorilla/websocket v1.5.3 // WebSocket
 
 	// Utilities
-	github.com/robfig/cron/v3 v3.0.1 // Scheduler
+	github.com/go-co-op/gocron/v2 v2.22.0 // Scheduler
+	github.com/google/uuid v1.6.0 // UUID generation
+	github.com/gorilla/websocket v1.5.3 // WebSocket
 
 	// Core
 	gopkg.in/yaml.v3 v3.0.1 // YAML config
@@ -35,6 +35,8 @@ require (
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/jonboulle/clockwork v0.5.0 // indirect
+	github.com/kr/pretty v0.2.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -45,6 +47,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/text v0.32.0 // indirect

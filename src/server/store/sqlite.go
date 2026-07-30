@@ -146,6 +146,11 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
+// DBStats returns the underlying sql.DB connection pool statistics.
+func (s *SQLiteStore) DBStats() sql.DBStats {
+	return s.db.Stats()
+}
+
 func (s *SQLiteStore) CreateUser(ctx context.Context, user *model.User) error {
 	query := `INSERT INTO users (id, username, email, password_hash, share_show_username, created_at) 
 		VALUES (?, ?, ?, ?, ?, ?)`
@@ -335,8 +340,8 @@ func (s *SQLiteStore) GetDeviceSpeedTests(ctx context.Context, deviceID string, 
 }
 
 func (s *SQLiteStore) UpdateSpeedTest(ctx context.Context, test *model.SpeedTest) error {
-	query := `UPDATE speed_tests SET share_code = ?, share_views = ? WHERE id = ?`
-	_, err := s.db.ExecContext(ctx, query, test.ShareCode, test.ShareViews, test.ID)
+	query := `UPDATE speed_tests SET download_mbps = ?, upload_mbps = ?, ping_ms = ?, jitter_ms = ?, packet_loss = ?, share_code = ?, share_views = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, test.DownloadMbps, test.UploadMbps, test.PingMs, test.JitterMs, test.PacketLoss, test.ShareCode, test.ShareViews, test.ID)
 	return err
 }
 
@@ -449,20 +454,19 @@ func (s *SQLiteStore) DeleteExpiredSessions(ctx context.Context) error {
 // Admin methods
 func (s *SQLiteStore) GetAdminByUsername(ctx context.Context, username string) (*model.Admin, error) {
 	admin := &model.Admin{}
-	var createdAt, updatedAt, lastLogin, lockedUntil int64
-	var email sql.NullString
-	var apiTokenHash sql.NullString
-	var lastLoginValid, lockedUntilValid bool
+	var createdAt, updatedAt int64
+	var email, apiTokenHash sql.NullString
+	var lastLogin, lockedUntil sql.NullInt64
 	var enabled int
 
-	query := `SELECT id, username, password, email, role, enabled, created_at, updated_at, last_login, failed_attempts, locked_until, api_token_hash 
+	query := `SELECT id, username, password, email, role, enabled, created_at, updated_at, last_login, failed_attempts, locked_until, api_token_hash
 	          FROM admins WHERE username = ?`
-	
+
 	err := s.db.QueryRowContext(ctx, query, username).Scan(
 		&admin.ID, &admin.Username, &admin.Password, &email, &admin.Role, &enabled,
 		&createdAt, &updatedAt, &lastLogin, &admin.FailedAttempts, &lockedUntil, &apiTokenHash,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -479,11 +483,11 @@ func (s *SQLiteStore) GetAdminByUsername(ctx context.Context, username string) (
 	if apiTokenHash.Valid {
 		admin.APITokenHash = apiTokenHash.String
 	}
-	if lastLoginValid && lastLogin > 0 {
-		admin.LastLogin = time.Unix(lastLogin, 0)
+	if lastLogin.Valid && lastLogin.Int64 > 0 {
+		admin.LastLogin = time.Unix(lastLogin.Int64, 0)
 	}
-	if lockedUntilValid && lockedUntil > 0 {
-		admin.LockedUntil = time.Unix(lockedUntil, 0)
+	if lockedUntil.Valid && lockedUntil.Int64 > 0 {
+		admin.LockedUntil = time.Unix(lockedUntil.Int64, 0)
 	}
 
 	return admin, nil

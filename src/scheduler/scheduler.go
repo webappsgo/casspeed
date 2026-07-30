@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	"github.com/go-co-op/gocron/v2"
+	"github.com/google/uuid"
 )
 
 // Task represents a scheduled task
@@ -27,35 +28,42 @@ type Task struct {
 	MaxRetries  int
 }
 
-// Scheduler manages scheduled tasks
+// Scheduler manages scheduled tasks using gocron/v2.
 type Scheduler struct {
-	cron     *cron.Cron
+	s        gocron.Scheduler
 	tasks    map[string]*Task
+	jobIDs   map[string]uuid.UUID
 	mu       sync.RWMutex
 	timezone *time.Location
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
-// New creates a new scheduler
+// New creates a new Scheduler.
 func New(timezone string) (*Scheduler, error) {
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
 		loc = time.UTC
 	}
 
+	s, err := gocron.NewScheduler(gocron.WithLocation(loc))
+	if err != nil {
+		return nil, fmt.Errorf("creating gocron scheduler: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Scheduler{
-		cron:     cron.New(cron.WithLocation(loc)),
+		s:        s,
 		tasks:    make(map[string]*Task),
+		jobIDs:   make(map[string]uuid.UUID),
 		timezone: loc,
 		ctx:      ctx,
 		cancel:   cancel,
 	}, nil
 }
 
-// AddTask adds a task to the scheduler
+// AddTask adds a task to the scheduler.
 func (s *Scheduler) AddTask(task *Task) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -64,21 +72,23 @@ func (s *Scheduler) AddTask(task *Task) error {
 		return fmt.Errorf("task %s already exists", task.ID)
 	}
 
-	// Add to cron if enabled
 	if task.Enabled {
-		_, err := s.cron.AddFunc(task.Schedule, func() {
-			s.runTask(task)
-		})
+		t := task
+		job, err := s.s.NewJob(
+			gocron.CronJob(task.Schedule, false),
+			gocron.NewTask(func() { s.runTask(t) }),
+		)
 		if err != nil {
 			return fmt.Errorf("invalid schedule %s: %w", task.Schedule, err)
 		}
+		s.jobIDs[task.ID] = job.ID()
 	}
 
 	s.tasks[task.ID] = task
 	return nil
 }
 
-// RemoveTask removes a task from the scheduler
+// RemoveTask removes a task from the scheduler.
 func (s *Scheduler) RemoveTask(taskID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,11 +97,16 @@ func (s *Scheduler) RemoveTask(taskID string) error {
 		return fmt.Errorf("task %s not found", taskID)
 	}
 
+	if jobID, ok := s.jobIDs[taskID]; ok {
+		s.s.RemoveJob(jobID)
+		delete(s.jobIDs, taskID)
+	}
+
 	delete(s.tasks, taskID)
 	return nil
 }
 
-// GetTask returns a task by ID
+// GetTask returns a task by ID.
 func (s *Scheduler) GetTask(taskID string) (*Task, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -104,7 +119,7 @@ func (s *Scheduler) GetTask(taskID string) (*Task, error) {
 	return task, nil
 }
 
-// GetAllTasks returns all tasks
+// GetAllTasks returns all registered tasks.
 func (s *Scheduler) GetAllTasks() []*Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -117,7 +132,7 @@ func (s *Scheduler) GetAllTasks() []*Task {
 	return tasks
 }
 
-// RunTaskNow triggers immediate task execution
+// RunTaskNow triggers immediate execution of a task.
 func (s *Scheduler) RunTaskNow(taskID string) error {
 	s.mu.RLock()
 	task, exists := s.tasks[taskID]
@@ -131,7 +146,7 @@ func (s *Scheduler) RunTaskNow(taskID string) error {
 	return nil
 }
 
-// runTask executes a task
+// runTask executes a task handler with timeout and updates its status.
 func (s *Scheduler) runTask(task *Task) {
 	if !task.Enabled {
 		return
@@ -139,7 +154,6 @@ func (s *Scheduler) runTask(task *Task) {
 
 	task.LastRun = time.Now()
 
-	// Execute task handler
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	defer cancel()
 
@@ -153,7 +167,6 @@ func (s *Scheduler) runTask(task *Task) {
 		task.LastError = err.Error()
 		task.FailCount++
 
-		// Retry logic
 		if task.RetryOnFail && task.FailCount < task.MaxRetries {
 			go s.retryTask(task)
 		}
@@ -165,7 +178,7 @@ func (s *Scheduler) runTask(task *Task) {
 	}
 }
 
-// retryTask retries a failed task after delay
+// retryTask retries a failed task after the configured delay.
 func (s *Scheduler) retryTask(task *Task) {
 	time.Sleep(task.RetryDelay)
 
@@ -174,19 +187,18 @@ func (s *Scheduler) retryTask(task *Task) {
 	}
 }
 
-// Start starts the scheduler
+// Start starts the scheduler.
 func (s *Scheduler) Start() {
-	s.cron.Start()
+	s.s.Start()
 }
 
-// Stop stops the scheduler gracefully
+// Stop stops the scheduler gracefully.
 func (s *Scheduler) Stop() {
 	s.cancel()
-	ctx := s.cron.Stop()
-	<-ctx.Done()
+	s.s.Shutdown()
 }
 
-// EnableTask enables a task
+// EnableTask enables a task by ID.
 func (s *Scheduler) EnableTask(taskID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -200,7 +212,7 @@ func (s *Scheduler) EnableTask(taskID string) error {
 	return nil
 }
 
-// DisableTask disables a task
+// DisableTask disables a task by ID.
 func (s *Scheduler) DisableTask(taskID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -214,7 +226,7 @@ func (s *Scheduler) DisableTask(taskID string) error {
 	return nil
 }
 
-// GetStatus returns scheduler status
+// GetStatus returns a summary of scheduler state.
 func (s *Scheduler) GetStatus() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
