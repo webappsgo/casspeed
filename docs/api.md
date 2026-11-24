@@ -1,109 +1,32 @@
-# API Documentation
+# HTTP API
 
-## Base URL
+The canonical versioned API base is `/api/v1`. Requests accept JSON where an endpoint takes a structured body; errors use HTTP status codes and must not expose internal paths or secrets. Authentication uses a session cookie for browser flows and a bearer token for automation.
 
-```
-http://localhost:64580/api/v1
-```
+## Speed tests
 
-## Endpoints
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/speed-tests` | Start a test and return its identifier/state |
+| `GET` | `/api/v1/speed-tests/{id}/status` | Receive live progress for the originating test |
+| `GET` | `/api/v1/speed-tests/{id}/download` | Download measurement data for that test |
+| `POST` | `/api/v1/speed-tests/{id}/uploads` | Submit bounded upload measurement data |
+| `GET` | `/api/v1/speed-tests/{id}` | Read a result if the caller owns it or it is shared |
+| `GET` | `/api/v1/speed-tests` | List the authenticated user's history |
+| `POST` | `/api/v1/speed-tests/{id}/shares` | Explicitly create a share link for an owned result |
+| `GET` | `/api/v1/shares/{code}` | Read a shared result |
+| `GET` | `/api/v1/shares/{code}/images/png` | Export the shared result as PNG |
+| `GET` | `/api/v1/shares/{code}/images/svg` | Export the shared result as SVG |
 
-### Speed Test
+An unshared result is private to the originating anonymous session or the owning account. A share link is public and should be treated as a public URL. Never put user IDs in a history query to select another user's data; ownership is determined by the authenticated caller.
 
-#### Start Test
-```
-POST /api/v1/speedtest/start
-```
+## User and server endpoints
 
-Response:
-```json
-{
-  "test_id": "abc123",
-  "status": "started"
-}
-```
-
-#### WebSocket Progress
-```
-GET /api/v1/speedtest/ws
-```
-
-Real-time progress updates via WebSocket:
-```json
-{
-  "stage": "download",
-  "progress": 0.5,
-  "speed": 123.4,
-  "message": "123.4 Mbps"
-}
-```
-
-#### Download Test
-```
-GET /api/v1/speedtest/download
-```
-
-Returns random data for download speed testing.
-
-#### Upload Test
-```
-POST /api/v1/speedtest/upload
-```
-
-Accepts data upload for speed testing.
-
-#### Get Result
-```
-GET /api/v1/speedtest/result/{id}
-```
-
-Response:
-```json
-{
-  "id": "abc123",
-  "download_mbps": 123.4,
-  "upload_mbps": 56.7,
-  "ping_ms": 12.3,
-  "timestamp": "2025-12-28T00:00:00Z"
-}
-```
-
-#### Get History
-```
-GET /api/v1/speedtest/history?user_id={id}
-```
-
-Returns array of test results.
-
-### Share
-
-#### View Share
-```
-GET /share/{code}
-GET /s/{code}
-```
-
-HTML page with test results.
-
-#### Share Images
-```
-GET /share/{code}.png
-GET /s/{code}.png
-```
-
-PNG image (1200x630) for social media.
-
-```
-GET /share/{code}.svg
-GET /s/{code}.svg
-```
-
-SVG image (scalable vector).
+Account registration and login, profile, device, token, and server administration endpoints are documented by the live OpenAPI document at `/api/v1/server/swagger`. Swagger UI is available at `/server/docs/swagger`. The health endpoint is `/api/v1/server/healthz`; `/api/healthz` is a direct alias.
 
 ## Authentication
 
-Use API tokens for authenticated requests:
+Send `Authorization: Bearer <token>` for supported automation requests. Keep tokens secret, use the least necessary account, and revoke a token if it is exposed. Browser sign-in uses a session and CSRF protection. Failed authentication should not disclose whether an account exists.
 
-```
-Authorization: Bearer YOUR_TOKEN
-```
+## Representations
+
+The server API uses JSON by default. Health endpoints also support plain text through content negotiation and the `.txt` suffix. The live server's OpenAPI document is the machine-readable reference for current request and response fields.

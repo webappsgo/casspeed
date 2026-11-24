@@ -1,59 +1,50 @@
-# casspeed
+# CasSpeed
 
-A free self-hosted alternative to speedtest.net with all the features but free and opensource with no ads, tracking, and no feature gating.
-
+[![CI](https://github.com/webappsgo/casspeed/actions/workflows/ci.yml/badge.svg)](https://github.com/webappsgo/casspeed/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/webappsgo/casspeed)](https://github.com/webappsgo/casspeed/releases)
+[![License](https://img.shields.io/github/license/webappsgo/casspeed)](LICENSE.md)
 [![Documentation](https://readthedocs.org/projects/casapps-casspeed/badge/?version=latest)](https://casapps-casspeed.readthedocs.io)
+
+## About
+
+CasSpeed is a self-hosted, privacy-respecting internet speed testing service. It measures download and upload throughput, latency, jitter, and packet loss without advertisements or tracking. Anonymous results are private to the originating session; a result becomes public only when its owner explicitly creates a share link.
 
 ## Features
 
-- 🚀 Multi-threaded download/upload tests
-- 📊 Real-time WebSocket progress updates
-- 🔗 Shareable test results with PNG/SVG export
-- 👥 Multi-user support with device tracking
-- 🔐 API token authentication
-- 📱 Responsive dark theme web UI
-- 💻 CLI client with real-time display and graphs
-- 🐳 Docker and multi-platform support
+- Browser and command-line speed tests with live progress
+- Anonymous testing and registered-user history
+- Private device and API-token management
+- Explicitly shared results with PNG and SVG exports
+- Self-hosted operation with no required external measurement service
 
-## Quick Start
+## Production
 
-### Docker
+Download the server binary and CLI client for your platform from [GitHub Releases](https://github.com/webappsgo/casspeed/releases). The server runs in the foreground by default and chooses an available port in the 64xxx range when no port is configured. See the [installation guide](https://casapps-casspeed.readthedocs.io/en/latest/installation/) for Docker, binary, and systemd instructions.
 
-```bash
-docker-compose up -d
-```
+## Client
 
-Visit `http://localhost:64580` to access the web interface.
+Run `casspeed-cli` for the interactive terminal interface. Use `casspeed-cli --server URL` to select a CasSpeed server. See the [CLI reference](https://casapps-casspeed.readthedocs.io/en/latest/cli/) for the complete command-line options.
 
-### Binary
+## Configuration
 
-Download from releases and run:
+The server creates its configuration in the OS-specific configuration directory on first run. Command-line flags and supported environment variables can override paths and listener settings. See [configuration reference](https://casapps-casspeed.readthedocs.io/en/latest/configuration/).
 
-```bash
-./casspeed
-```
+## API
 
-Default port: 64580 (random port per spec)
+The versioned API is rooted at `/api/v1`. Speed-test routes include `POST /speed-tests`, `GET /speed-tests/{id}`, and the test transfer endpoints. Unshared results require the originating session or owning account. See the [API reference](https://casapps-casspeed.readthedocs.io/en/latest/api/) for request and response details.
 
-## CLI Client
+## Other
 
-```bash
-casspeed-cli                  # Launch TUI mode
-casspeed-cli --server URL     # Connect to custom server
-```
+Public service pages are available under `/server/`, including `/server/about`, `/server/privacy`, `/server/terms`, `/server/help`, and `/server/healthz`. Swagger UI is at `/server/docs/swagger`; the OpenAPI document is at `/api/v1/server/swagger`.
 
-## Documentation
+## Development
 
-Full documentation available at [https://casapps-casspeed.readthedocs.io](https://casapps-casspeed.readthedocs.io)
+Build the server and CLI for supported platforms with `make build`; run the project test and coverage gate with `make test`. Go commands run in the project toolchain container. See the [development guide](https://casapps-casspeed.readthedocs.io/en/latest/development/).
 
-## Building from Source
+## Disclaimer
 
-```bash
-make build
-```
-
-Requires Docker (all builds use `golang:alpine` container).
+CasSpeed measurements are estimates affected by the client device, network path, server capacity, and other traffic. They are not a guarantee of service-provider performance.
 
 ## License
 
-MIT License - see LICENSE.md for details.
+CasSpeed is distributed under the MIT License. See [LICENSE.md](LICENSE.md).

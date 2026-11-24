@@ -1,201 +1,28 @@
-# Development Guide
+# Development
 
-Guide for developers contributing to casspeed.
+CasSpeed is a Go project. Docker, Make, and Git are required; the supported Go toolchain runs in the `casjaysdev/go:latest` container.
 
-## Prerequisites
+## Build and validate
 
-- Docker (required for building)
-- Git
-- Make
-- (Optional) Go 1.21+ for local development
-
-## Getting Started
-
-### Clone Repository
-
-```bash
-git clone https://github.com/casapps/casspeed
-cd casspeed
+```sh
+make build       # server and CLI for supported platforms
+make test        # go vet, package tests, and aggregate coverage gate
+make docker      # local multi-architecture image build; does not push
+make dev         # local platform binaries in a project-scoped temp directory
 ```
 
-### Quick Build
+Use the repository's test/lint wrapper for direct test and lint commands. Run formatting in the project toolchain container. Do not run Go builds or binaries directly on the host.
 
-```bash
-# Build all platforms (uses Docker)
-make build
+## Source layout
 
-# Outputs to binaries/
-```
+- `src/`: server, CLI, configuration, auth, storage, and supporting packages
+- `src/server/template/` and `src/server/static/`: embedded web templates and assets
+- `docker/`: production and development container definitions
+- `docs/`: MkDocs and Read the Docs content only
+- `tests/`: test and isolated-environment scripts
 
-### Development Build
+Runtime databases, logs, test outputs, and temporary build products belong in project-scoped OS temporary directories or the configured runtime directories, never in the source tree. `binaries/` is an ignored build output for the documented Make targets.
 
-```bash
-# Quick dev build to temp directory
-make dev
+## Contribution workflow
 
-# Or using Docker Compose
-docker-compose -f docker/docker-compose.dev.yml up
-```
-
-## Project Structure
-
-```
-casspeed/
-├── src/                    # Source code
-│   ├── config/            # Configuration handling
-│   ├── mode/              # App mode detection
-│   ├── paths/             # OS-specific paths
-│   ├── server/            # HTTP server
-│   │   ├── handler/       # Request handlers
-│   │   ├── model/         # Data models
-│   │   ├── service/       # Business logic
-│   │   └── store/         # Database layer
-│   └── client/            # CLI client
-├── docker/                 # Docker files
-├── docs/                   # Documentation (MkDocs)
-├── tests/                  # Test files
-└── web/                    # Frontend templates
-```
-
-## Building
-
-### Using Make (Recommended)
-
-```bash
-# Build all platforms
-make build
-
-# Build Docker image
-make docker
-
-# Run tests
-make test
-
-# Clean build artifacts
-make clean
-```
-
-### Direct Docker Build
-
-```bash
-# Build using Docker directly
-docker run --rm \
-  -v $(pwd):/build \
-  -w /build \
-  -e CGO_ENABLED=0 \
-  golang:alpine \
-  go build -o binaries/casspeed ./src
-```
-
-## Testing
-
-### Run All Tests
-
-```bash
-make test
-```
-
-### Docker Testing
-
-```bash
-# Test with Docker Compose
-docker-compose -f docker/docker-compose.test.yml up
-
-# Manual Docker test
-docker build -f docker/Dockerfile -t casspeed:test .
-docker run --rm -p 8080:80 casspeed:test
-```
-
-### Incus Testing
-
-```bash
-# Test in Incus container
-./tests/incus.sh
-```
-
-## Code Style
-
-### Go Code
-
-- Use `gofmt` for formatting
-- Follow standard Go conventions
-- Comments above code (never inline)
-- Descriptive variable names
-
-### File Naming
-
-- Go files: `lowercase_snake.go`
-- Packages: `lowercase` (single word)
-- Functions: `PascalCase` (exported), `camelCase` (private)
-
-## Configuration
-
-Development config auto-generates on first run:
-
-```yaml
-server:
-  mode: development
-  port: 8080
-  address: "127.0.0.1"
-
-test:
-  max_threads: 8
-  default_duration: 10
-```
-
-## Debugging
-
-### Enable Debug Mode
-
-```bash
-# Via flag
-./casspeed --debug
-
-# Via environment
-export DEBUG=true
-./casspeed
-
-# Via config
-# server.yml: debug: true
-```
-
-### Debug Endpoints
-
-When debug mode enabled:
-
-- `/debug/pprof/` - Go profiling
-- `/debug/vars` - Runtime variables
-
-## Contributing
-
-### Workflow
-
-1. Fork repository
-2. Create feature branch
-3. Make changes
-4. Test thoroughly
-5. Submit pull request
-
-### Commit Messages
-
-Use emoji prefixes:
-
-- ✨ `feat:` New feature
-- 🐛 `fix:` Bug fix
-- 📝 `docs:` Documentation
-- ♻️ `refactor:` Code refactoring
-- ✅ `test:` Add tests
-- 🔧 `chore:` Maintenance
-
-### Pull Request
-
-- Clear description
-- Link related issues
-- All tests passing
-- Documentation updated
-
-## Resources
-
-- Repository: https://github.com/casapps/casspeed
-- Issues: https://github.com/casapps/casspeed/issues
-- Documentation: https://casapps-casspeed.readthedocs.io
+Read `AI.md`, `IDEA.md`, and applicable project rules before making changes. Update user documentation with behavior changes. Run the relevant test and lint gates, review the full diff, and document every changed file in `.git/COMMIT_MESS` before using the repository's `gitcommit` workflow. CI runs on GitHub Actions and the other configured providers.

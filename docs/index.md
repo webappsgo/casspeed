@@ -1,59 +1,23 @@
-# casspeed
+# CasSpeed
 
-**Self-hosted Speed Testing Server**
+CasSpeed is a self-hosted internet speed testing service for measuring download and upload throughput, latency, jitter, and packet loss. Its product contract is documented in the repository's [`IDEA.md`](https://github.com/webappsgo/casspeed/blob/main/IDEA.md); implementation requirements are in [`AI.md`](https://github.com/webappsgo/casspeed/blob/main/AI.md).
 
-casspeed is a free, open-source alternative to speedtest.net that you can host yourself. It provides complete feature parity with commercial speed testing services while maintaining your privacy and giving you full control over your data.
+## Guides
 
-## Features
+- [Installation](installation.md): Docker, binary, and service deployment
+- [Configuration](configuration.md): paths, listener, and server settings
+- [API](api.md): versioned HTTP API and result privacy
+- [CLI](cli.md): interactive terminal client
+- [Admin](admin.md): server administration and setup
+- [Security](security.md): authentication, private results, and reporting
+- [Integrations](integrations.md): discovery endpoints and external services
+- [Development](development.md): build, test, and contribution workflow
+- [Translating](translating.md): localization contribution guidance
 
-- **Web-based speedtest interface** with real-time graphs
-- **CLI client** for server-side speed testing  
-- **Historical test results** tracking and visualization
-- **No advertisements** or tracking
-- **Self-hosted** for complete privacy and control
-- **Multi-threaded** download/upload tests
-- **Latency and jitter** measurements
-- **Multiple concurrent tests** support
-- **Share results** with generated images (PNG/SVG)
-- **Rate limiting** and concurrent test management
-- **SQLite database** for result storage
+## Browser pages
 
-## Quick Start
+The public browser pages live below `/server/`: about, privacy, contact, help, terms, DPO, security, and health. Interactive API documentation is available at `/server/docs/swagger`; the OpenAPI document is `/api/v1/server/swagger`.
 
-### Docker (Recommended)
+## Privacy model
 
-```bash
-docker run -d \
-  -p 64580:80 \
-  -v ./config:/config \
-  -v ./data:/data \
-  ghcr.io/casapps/casspeed:latest
-```
-
-### Binary
-
-```bash
-# Download latest release
-curl -LO https://github.com/casapps/casspeed/releases/latest/download/casspeed-linux-amd64
-
-# Make executable
-chmod +x casspeed-linux-amd64
-
-# Run
-./casspeed-linux-amd64 --port 8080
-```
-
-## Documentation
-
-- [Installation Guide](installation.md) - Detailed installation instructions
-- [API Reference](api.md) - REST API documentation
-- [Configuration](configuration.md) - Configuration options
-
-## Support
-
-- GitHub: [casapps/casspeed](https://github.com/casapps/casspeed)
-- Issues: [GitHub Issues](https://github.com/casapps/casspeed/issues)
-
-## License
-
-MIT License - see LICENSE.md for details
+An unshared result is visible only to the originating anonymous session or owning account. A result is public only after its owner explicitly creates a share link. Anonymous result retention is controlled by the server operator; account history remains until deleted.

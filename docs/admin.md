@@ -1,98 +1,17 @@
-# Admin Panel
+# Server administration
 
-The admin panel provides web-based configuration and management for casspeed.
+The admin interface is isolated from public navigation. Its default root is `/server/administration/`; deployments may choose another `server.admin_path`. Do not add public links to this path or disclose it in public pages.
 
-## Access
+## Initial setup and authentication
 
-Access the admin panel at: `http://{your-server}:{port}/admin`
+Use the setup flow at `/server/{admin_path}/setup` only while the server is uninitialized. Create a unique administrator credential and store it securely. Admin authentication and sessions are separate from regular user sessions. A regular user must not gain access to administration routes. Debug mode does not bypass authentication.
 
-## First-Run Setup
+The administrator dashboard is at `/server/{admin_path}/`. Server management routes use direct section names such as `/settings`, `/ssl`, `/email`, `/scheduler`, `/logs`, `/backup`, `/updates`, `/info`, `/metrics`, `/network/tor`, `/network/geoip`, `/security/auth`, `/security/tokens`, and `/users`. Do not place server settings beneath a `/config/` segment or beneath an administrator's personal profile path.
 
-On first run, you'll be prompted to create the primary admin account:
+## Administration API
 
-1. Navigate to `/admin/setup`
-2. Create admin username and password
-3. Configure initial settings
-4. Complete setup wizard
+Admin API routes are rooted at `/api/v1/server/{admin_path}/` and require admin authorization. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes require CSRF protection and should work without JavaScript.
 
-## Admin Features
+## Operational guidance
 
-### Server Configuration
-
-Manage all server settings through the web UI:
-
-- Server address and port
-- Application mode (production/development)
-- Rate limiting rules
-- SSL/TLS certificates
-
-### User Management
-
-- View registered users
-- Manage user accounts
-- Review device registrations
-- Monitor API tokens
-
-### Speed Test Analytics
-
-- View test history
-- Analyze speed trends
-- Export test data
-- Manage shared results
-
-### System Monitoring
-
-- Server health status
-- Resource usage
-- Active connections
-- Error logs
-
-### Backup & Restore
-
-- Configure automatic backups
-- Manual backup creation
-- Restore from backup
-- Backup encryption settings
-
-## Security
-
-### Authentication
-
-Admin panel uses session-based authentication:
-
-- Secure session cookies
-- Configurable session timeout
-- Remember me option (30 days)
-
-### 2FA (Optional)
-
-Enable two-factor authentication:
-
-- TOTP (Google Authenticator, Authy)
-- WebAuthn/Passkeys
-- Backup codes
-
-### API Access
-
-Admin API available at `/api/v1/admin/`:
-
-- Bearer token authentication
-- Create API tokens in admin panel
-- Token format: `adm_xxxxxxxxxxxxxxxxxxxxxxxxxx`
-
-## Configuration
-
-All settings in `server.yml` can be edited through the admin UI.
-
-Changes take effect immediately (except port/address which require restart).
-
-## Audit Log
-
-All admin actions are logged:
-
-- Configuration changes
-- User modifications
-- Security events
-- System operations
-
-Access audit log in Admin Panel → Logs → Audit.
+Protect the data and log directories, use HTTPS on untrusted networks, rotate exposed credentials, and keep backups outside the service data volume. Review audit logs after administrative changes. The admin interface does not replace OS-level access controls or backup testing.

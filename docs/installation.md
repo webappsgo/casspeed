@@ -1,96 +1,39 @@
-# Installation Guide
+# Installation
 
-## Docker (Recommended)
+CasSpeed ships as a server binary, a terminal client, and a Docker image. See [GitHub Releases](https://github.com/webappsgo/casspeed/releases) for published artifacts.
 
-### Using Docker Compose
+## Docker
 
-1. Clone the repository:
-```bash
-git clone https://github.com/casapps/casspeed.git
-cd casspeed
-```
-
-2. Start the server:
-```bash
-docker-compose up -d
-```
-
-3. Access the web UI:
-```
-http://localhost:64580
-```
-
-### Using Docker CLI
-
-```bash
-docker run -d \
-  -p 64580:64580 \
+```sh
+docker run --rm --name casspeed -p 64580:64580 \
   -v casspeed-data:/var/lib/casapps/casspeed \
   ghcr.io/casapps/casspeed:latest
 ```
 
-## Binary Installation
+Persist the application data directory for database durability. Configure the published port to match the listener selected by the server. The container runs the server in the foreground; Docker restart policies or an orchestrator manage its lifecycle.
 
-### Download Pre-built Binary
+## Binary
 
-Download from [GitHub Releases](https://github.com/casapps/casspeed/releases):
+Download the server and, if desired, CLI binaries for your OS and architecture. Run the server in the foreground under a service manager. The server selects an available port in the 64xxx range unless configured otherwise.
 
-```bash
-# Linux AMD64
-wget https://github.com/casapps/casspeed/releases/latest/download/casspeed-linux-amd64
-chmod +x casspeed-linux-amd64
-sudo mv casspeed-linux-amd64 /usr/local/bin/casspeed
-
-# macOS ARM64
-wget https://github.com/casapps/casspeed/releases/latest/download/casspeed-darwin-arm64
-chmod +x casspeed-darwin-arm64
-sudo mv casspeed-darwin-arm64 /usr/local/bin/casspeed
+```sh
+./casspeed --help
+./casspeed --status
+./casspeed
 ```
 
-### Build from Source
+## systemd
 
-Requirements:
-- Go 1.23 or higher
-- Make
+Use a dedicated unprivileged service account and a systemd unit with `Type=simple`. Run the binary in the foreground and configure its data, configuration, and log directories using supported flags or environment variables. Avoid daemon mode; process supervision belongs to systemd.
 
-```bash
-git clone https://github.com/casapps/casspeed.git
+## Build from source
+
+Docker and Make are required. Builds use the project's Go toolchain container.
+
+```sh
+git clone https://github.com/webappsgo/casspeed.git
 cd casspeed
 make build
-sudo cp binaries/casspeed /usr/local/bin/
-sudo cp binaries/casspeed-cli /usr/local/bin/
 ```
 
-## CLI Client Installation
-
-Download the CLI client:
-
-```bash
-# Linux AMD64
-wget https://github.com/casapps/casspeed/releases/latest/download/casspeed-cli-linux-amd64
-chmod +x casspeed-cli-linux-amd64
-sudo mv casspeed-cli-linux-amd64 /usr/local/bin/casspeed-cli
-
-# macOS ARM64
-wget https://github.com/casapps/casspeed/releases/latest/download/casspeed-cli-darwin-arm64
-chmod +x casspeed-cli-darwin-arm64
-sudo mv casspeed-cli-darwin-arm64 /usr/local/bin/casspeed-cli
-```
-
-## Systemd Service (Linux)
-
-```bash
-sudo casspeed --service install
-sudo systemctl enable casspeed
-sudo systemctl start casspeed
-```
-
-## Configuration
-
-On first run, casspeed creates a default configuration:
-
-- Linux: `~/.config/casapps/casspeed/server.yml`
-- macOS: `~/.config/casapps/casspeed/server.yml`
-- Windows: `%APPDATA%\casapps\casspeed\server.yml`
-
-Edit the configuration file and restart the service.
+The server and CLI outputs are in the ignored `binaries/` directory. See [Development](development.md) for testing and toolchain details.
