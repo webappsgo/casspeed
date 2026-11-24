@@ -4,7 +4,7 @@ CasSpeed loads YAML settings from `server.yml` in its resolved configuration dir
 
 ## Listener and directories
 
-The server configuration supports `server.address`, `server.port`, `server.fqdn`, `server.mode`, and `server.admin_path`. Defaults are `[::]`, an automatically selected 64xxx port, the local hostname, production mode, and `administration` for the admin path.
+The server configuration supports `server.address`, `server.port`, `server.fqdn`, `server.mode`, and `server.admin_path`. Defaults are `[::]`, an automatically selected 64xxx port, the local hostname, production mode, and `administration` for the admin path. The production container entrypoint overrides the address and port to `0.0.0.0:80` unless its environment variables override them.
 
 Directory flags take precedence over matching environment variables, which take precedence over OS-specific defaults:
 

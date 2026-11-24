@@ -5,8 +5,9 @@ CasSpeed ships as a server binary, a terminal client, and a Docker image. See [G
 ## Docker
 
 ```sh
-docker run --rm --name casspeed -p 64580:64580 \
-  -v casspeed-data:/var/lib/casapps/casspeed \
+docker run --rm --name casspeed -p 64580:80 \
+  -v casspeed-config:/config \
+  -v casspeed-data:/data \
   ghcr.io/casapps/casspeed:latest
 ```
 
