@@ -27,6 +27,10 @@ Account registration and login, profile, device, token, and server administratio
 
 Send `Authorization: Bearer <token>` for supported automation requests. Keep tokens secret, use the least necessary account, and revoke a token if it is exposed. Browser sign-in uses a session and CSRF protection. Failed authentication should not disclose whether an account exists.
 
+## MCP
+
+The Streamable HTTP MCP endpoint is `/api/v1/server/mcp`, with direct aliases `/api/mcp` and `/mcp`. It uses the same bearer API token and exposes the operations described by OpenAPI as `tools/list` and `tools/call`. MCP requests use JSON-RPC 2.0 over `POST` with protocol revision `2026-07-28` and the required `MCP-Protocol-Version`, `Mcp-Method`, and `_meta` fields. The endpoint has no session state.
+
 ## Representations
 
 The server API uses JSON by default. Health endpoints also support plain text through content negotiation and the `.txt` suffix. The live server's OpenAPI document is the machine-readable reference for current request and response fields.
