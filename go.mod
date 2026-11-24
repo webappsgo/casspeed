@@ -4,13 +4,13 @@ go 1.24.0
 
 require (
 	// Network/HTTP
-	github.com/go-chi/chi/v5 v5.2.0 // Router
+	github.com/go-chi/chi/v5 v5.3.0 // Router
 	github.com/go-chi/cors v1.2.1 // CORS (chi-compatible)
 
 	// Utilities
 	github.com/go-co-op/gocron/v2 v2.22.0 // Scheduler
 	github.com/google/uuid v1.6.0 // UUID generation
-	github.com/gorilla/websocket v1.5.3 // WebSocket
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4 // WebSocket
 
 	// Core
 	gopkg.in/yaml.v3 v3.0.1 // YAML config
