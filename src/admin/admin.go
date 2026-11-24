@@ -18,6 +18,10 @@ import (
 //go:embed template/*
 var adminTemplateFS embed.FS
 
+type contextKey string
+
+const adminIDContextKey contextKey = "admin_id"
+
 type Handler struct {
 	store store.Store
 }
@@ -215,7 +219,7 @@ func (h *Handler) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		h.store.UpdateAdminSessionActivity(ctx, session.ID)
 
-		ctx = context.WithValue(ctx, "admin_id", session.AdminID)
+		ctx = context.WithValue(ctx, adminIDContextKey, session.AdminID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

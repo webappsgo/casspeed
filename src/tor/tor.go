@@ -198,7 +198,7 @@ func (s *Service) GenerateVanityAddress(prefix string) error {
 	// Validate prefix (v3 onion addresses use base32)
 	prefix = strings.ToLower(prefix)
 	for _, c := range prefix {
-		if !((c >= 'a' && c <= 'z') || (c >= '2' && c <= '7')) {
+		if (c < 'a' || c > 'z') && (c < '2' || c > '7') {
 			return fmt.Errorf("invalid prefix character: %c (must be a-z or 2-7)", c)
 		}
 	}

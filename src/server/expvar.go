@@ -9,7 +9,6 @@ import (
 var (
 	expRequestCount    = expvar.NewInt("requests_total")
 	expRequestDuration = expvar.NewFloat("requests_duration_seconds")
-	expErrorCount      = expvar.NewInt("errors_total")
 	expStartTime       = time.Now()
 )
 
@@ -42,9 +41,4 @@ func init() {
 func recordRequest(duration time.Duration) {
 	expRequestCount.Add(1)
 	expRequestDuration.Add(duration.Seconds())
-}
-
-// recordError records an error occurrence for expvar metrics.
-func recordError() {
-	expErrorCount.Add(1)
 }

@@ -1,6 +1,9 @@
 package tor
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -88,10 +91,72 @@ func TestGenerateVanityAddress_InvalidChars(t *testing.T) {
 
 func TestGenerateVanityAddress_ValidPrefix(t *testing.T) {
 	svc := NewService(&Config{})
-	// Valid prefix: a-z and 2-7 only
-	err := svc.GenerateVanityAddress("test2")
-	// Current implementation always returns error (requires external tool).
-	if err == nil {
-		t.Log("GenerateVanityAddress succeeded unexpectedly — tool available")
+	// Valid base32 input passes validation, then reports that the external
+	// vanity-generation tool is not part of this service.
+	err := svc.GenerateVanityAddress("TeSt27")
+	if err == nil || !strings.Contains(err.Error(), "requires external tool mkp224o") {
+		t.Fatalf("GenerateVanityAddress(valid prefix) error = %v, want external-tool guidance", err)
+	}
+}
+
+func TestGenerateVanityAddressRejectsBase32Boundaries(t *testing.T) {
+	svc := NewService(&Config{})
+	for _, prefix := range []string{"a0", "z8", "-a"} {
+		if err := svc.GenerateVanityAddress(prefix); err == nil || !strings.Contains(err.Error(), "invalid prefix character") {
+			t.Errorf("GenerateVanityAddress(%q) error = %v, want invalid-character error", prefix, err)
+		}
+	}
+}
+
+func TestStopWhenNotRunning(t *testing.T) {
+	svc := NewService(&Config{})
+	if err := svc.Stop(); err != nil {
+		t.Fatalf("Stop on a stopped service: %v", err)
+	}
+	if svc.IsRunning() {
+		t.Error("Stop should leave a stopped service stopped")
+	}
+}
+
+func TestParseHiddenServiceHostname(t *testing.T) {
+	dir := t.TempDir()
+	hostnamePath := filepath.Join(dir, "hidden_service", "hostname")
+	if err := os.MkdirAll(filepath.Dir(hostnamePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(hostnamePath, []byte("exampleonionaddress.onion\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseHiddenServiceHostname(dir)
+	if err != nil {
+		t.Fatalf("ParseHiddenServiceHostname: %v", err)
+	}
+	if got != "exampleonionaddress.onion" {
+		t.Errorf("hostname = %q, want trimmed hostname", got)
+	}
+	if _, err := ParseHiddenServiceHostname(t.TempDir()); err == nil {
+		t.Error("missing hostname file should return an error")
+	}
+}
+
+func TestFindInPathRequiresExecutable(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	program := filepath.Join(dir, "tor")
+	if err := os.WriteFile(program, []byte("fake tor"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := findInPath("tor"); err == nil {
+		t.Fatal("findInPath should reject a non-executable file")
+	}
+	if err := os.Chmod(program, 0700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := findInPath("tor")
+	if err != nil {
+		t.Fatalf("findInPath executable: %v", err)
+	}
+	if got != program {
+		t.Errorf("findInPath = %q, want %q", got, program)
 	}
 }

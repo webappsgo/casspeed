@@ -115,7 +115,9 @@ func TestGenerateSessionID(t *testing.T) {
 	})
 
 	t.Run("two calls produce different IDs", func(t *testing.T) {
-		if GenerateSessionID() == GenerateSessionID() {
+		firstID := GenerateSessionID()
+		secondID := GenerateSessionID()
+		if firstID == secondID {
 			t.Error("consecutive session IDs should differ")
 		}
 	})

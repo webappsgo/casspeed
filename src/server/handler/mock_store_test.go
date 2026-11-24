@@ -16,9 +16,12 @@ type mockStore struct {
 	sessions map[string]*model.Session
 	tests    map[string]*model.SpeedTest
 	testsByCode map[string]*model.SpeedTest
+	devices  map[string]*model.Device
+	tokens   map[string]*model.APIToken
 
 	// Inject controllable errors.
 	errGetUserByUsername error
+	errGetUser           error
 	errGetUserByEmail    error
 	errCreateSession     error
 	errDeleteSession     error
@@ -26,6 +29,12 @@ type mockStore struct {
 	errGetByShareCode    error
 	errGetHistory        error
 	errCreateUser        error
+	errGetUserDevices    error
+	errCreateDevice      error
+	errDeleteDevice      error
+	errGetUserAPITokens  error
+	errCreateAPIToken    error
+	errDeleteAPIToken    error
 }
 
 func newMockStore() *mockStore {
@@ -34,6 +43,8 @@ func newMockStore() *mockStore {
 		sessions:    make(map[string]*model.Session),
 		tests:       make(map[string]*model.SpeedTest),
 		testsByCode: make(map[string]*model.SpeedTest),
+		devices:     make(map[string]*model.Device),
+		tokens:      make(map[string]*model.APIToken),
 	}
 }
 
@@ -48,6 +59,9 @@ func (m *mockStore) CreateUser(_ context.Context, u *model.User) error {
 }
 
 func (m *mockStore) GetUser(_ context.Context, id string) (*model.User, error) {
+	if m.errGetUser != nil {
+		return nil, m.errGetUser
+	}
 	u := m.users[id]
 	return u, nil
 }
@@ -86,15 +100,36 @@ func (m *mockStore) DeleteUser(_ context.Context, id string) error {
 	return nil
 }
 
-func (m *mockStore) CreateDevice(_ context.Context, _ *model.Device) error  { return nil }
+func (m *mockStore) CreateDevice(_ context.Context, d *model.Device) error {
+	if m.errCreateDevice != nil {
+		return m.errCreateDevice
+	}
+	m.devices[d.ID] = d
+	return nil
+}
 func (m *mockStore) GetDevice(_ context.Context, _ string) (*model.Device, error) {
 	return nil, nil
 }
-func (m *mockStore) GetUserDevices(_ context.Context, _ string) ([]*model.Device, error) {
-	return nil, nil
+func (m *mockStore) GetUserDevices(_ context.Context, userID string) ([]*model.Device, error) {
+	if m.errGetUserDevices != nil {
+		return nil, m.errGetUserDevices
+	}
+	devices := make([]*model.Device, 0)
+	for _, device := range m.devices {
+		if device.UserID == userID {
+			devices = append(devices, device)
+		}
+	}
+	return devices, nil
 }
 func (m *mockStore) UpdateDevice(_ context.Context, _ *model.Device) error  { return nil }
-func (m *mockStore) DeleteDevice(_ context.Context, _ string) error         { return nil }
+func (m *mockStore) DeleteDevice(_ context.Context, id string) error {
+	if m.errDeleteDevice != nil {
+		return m.errDeleteDevice
+	}
+	delete(m.devices, id)
+	return nil
+}
 
 func (m *mockStore) CreateSpeedTest(_ context.Context, t *model.SpeedTest) error {
 	m.tests[t.ID] = t
@@ -150,18 +185,42 @@ func (m *mockStore) IncrementShareViews(_ context.Context, code string) error {
 	return nil
 }
 
-func (m *mockStore) CreateAPIToken(_ context.Context, _ *model.APIToken) error { return nil }
+func (m *mockStore) CreateAPIToken(_ context.Context, token *model.APIToken) error {
+	if m.errCreateAPIToken != nil {
+		return m.errCreateAPIToken
+	}
+	m.tokens[token.ID] = token
+	return nil
+}
 func (m *mockStore) GetAPIToken(_ context.Context, _ string) (*model.APIToken, error) {
 	return nil, nil
 }
 func (m *mockStore) GetAPITokenByToken(_ context.Context, _ string) (*model.APIToken, error) {
 	return nil, nil
 }
-func (m *mockStore) GetUserAPITokens(_ context.Context, _ string) ([]*model.APIToken, error) {
-	return nil, nil
+func (m *mockStore) GetUserAPITokens(_ context.Context, userID string) ([]*model.APIToken, error) {
+	if m.errGetUserAPITokens != nil {
+		return nil, m.errGetUserAPITokens
+	}
+	tokens := make([]*model.APIToken, 0)
+	for _, token := range m.tokens {
+		if token.UserID == userID {
+			tokens = append(tokens, token)
+		}
+	}
+	return tokens, nil
 }
-func (m *mockStore) UpdateAPIToken(_ context.Context, _ *model.APIToken) error { return nil }
-func (m *mockStore) DeleteAPIToken(_ context.Context, _ string) error          { return nil }
+func (m *mockStore) UpdateAPIToken(_ context.Context, token *model.APIToken) error {
+	m.tokens[token.ID] = token
+	return nil
+}
+func (m *mockStore) DeleteAPIToken(_ context.Context, id string) error {
+	if m.errDeleteAPIToken != nil {
+		return m.errDeleteAPIToken
+	}
+	delete(m.tokens, id)
+	return nil
+}
 
 func (m *mockStore) CreateSession(_ context.Context, s *model.Session) error {
 	if m.errCreateSession != nil {

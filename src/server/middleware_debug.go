@@ -9,9 +9,12 @@ import (
 
 // debugMiddleware logs detailed request/response info (--debug/DEBUG=true only).
 func (s *Server) debugMiddleware(next http.Handler) http.Handler {
-	// No-op unless debug enabled
 	if !s.Mode.IsDebug() {
-		return next
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			next.ServeHTTP(w, r)
+			recordRequest(time.Since(start))
+		})
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +31,9 @@ func (s *Server) debugMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(rw, r)
 
-		s.debugLog(r, rw.status, time.Since(start), rw.size)
+		duration := time.Since(start)
+		recordRequest(duration)
+		s.debugLog(r, rw.status, duration, rw.size)
 	})
 }
 

@@ -19,6 +19,7 @@ CasSpeed is a self-hosted internet speed testing service - a free, open-source a
 - **Multi-user Support**: User accounts with device tracking and test history
 - **API Tokens**: Programmatic access for automation and scripting
 - **CLI Client**: Terminal UI (TUI) mode with real-time graphs using bubbletea
+- **Runtime Diagnostics**: Debug-only expvar output reports runtime details; request count and cumulative duration are collected in every mode
 - **Privacy-First**: Client IPs are hashed before storage, never stored in plain text
 - **Docker Support**: Multi-platform container deployment
 
@@ -106,9 +107,8 @@ Data Location:
 
 ### Coverage Threshold
 
-Test coverage threshold: **50%**
+Test coverage threshold: **60%**
 
-Rationale: The project includes a bubbletea TUI client (`src/client/`, `src/client/tui/`) that requires
-an interactive terminal and cannot be meaningfully unit-tested, and a main entry point (`src/`) that
-requires OS signals and flag parsing. These packages are tested via integration tests in `tests/`.
-The 50% threshold applies to `go test -cover ./...` measured across all packages including those.
+Rationale: The 60% unit-test floor follows the authoritative AI.md gate and applies to aggregate
+`go test -cover ./...` coverage across all packages. The TUI and main entry point remain in that
+aggregate; integration tests in `tests/` cover behavior that requires a terminal or OS signals.

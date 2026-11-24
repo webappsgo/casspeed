@@ -72,11 +72,9 @@ func TestPad(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
 			result := pad(tt.version)
-			// Result should be a string (possibly empty) — just verify it doesn't panic
 			if result == "" && tt.version == "" {
-				// empty version still produces padding
+				t.Error("empty version should still produce padding")
 			}
-			_ = result
 		})
 	}
 }

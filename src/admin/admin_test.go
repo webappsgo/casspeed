@@ -1,10 +1,15 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/casapps/casspeed/src/server/model"
+	"github.com/casapps/casspeed/src/server/store"
 )
 
 // ---- HashPassword / VerifyPassword tests ---------------------------------
@@ -432,5 +437,40 @@ func TestHandler_RequireAuth_RedirectsUnauthenticated(t *testing.T) {
 	// Without auth cookie, should redirect
 	if rec.Code == http.StatusOK {
 		t.Error("unauthenticated request should not return 200")
+	}
+}
+
+func TestHandler_RequireAuthPassesAuthenticatedAdminContext(t *testing.T) {
+	st, err := store.NewSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	const sessionID = "valid-admin-session"
+	const adminID = 42
+	if err := st.CreateAdminSession(context.Background(), &model.AdminSession{
+		ID:        sessionID,
+		AdminID:   adminID,
+		IPAddress: "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("CreateAdminSession: %v", err)
+	}
+
+	h := NewHandler(st)
+	called := false
+	protected := h.RequireAuth(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if got := r.Context().Value(adminIDContextKey); got != adminID {
+			t.Errorf("admin ID in request context = %v, want %d", got, adminID)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/server/admin/", nil)
+	req.AddCookie(&http.Cookie{Name: "admin_session", Value: sessionID})
+	rec := httptest.NewRecorder()
+	protected(rec, req)
+	if !called || rec.Code != http.StatusNoContent {
+		t.Errorf("authenticated handler called=%t status=%d", called, rec.Code)
 	}
 }

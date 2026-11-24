@@ -423,8 +423,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		accept = "application/json"
 	}
 
-	switch {
-	case accept == "text/plain" || accept == "text/*":
+	switch accept {
+	case "text/plain", "text/*":
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprintf(w, "status: %s\n", resp.Status)
 		fmt.Fprintf(w, "version: %s\n", resp.Version)
@@ -436,7 +436,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "disk: %s\n", resp.Checks.Disk)
 		fmt.Fprintf(w, "scheduler: %s\n", resp.Checks.Scheduler)
 
-	case accept == "application/json" || accept == "application/*":
+	case "application/json", "application/*":
 		w.Header().Set("Content-Type", "application/json")
 		data, _ := json.MarshalIndent(resp, "", "  ")
 		w.Write(data)

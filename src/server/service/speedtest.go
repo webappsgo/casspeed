@@ -103,7 +103,7 @@ func (s *SpeedTestService) testPing() (avgMs, jitterMs, packetLoss float64) {
 
 	var variance float64
 	for _, p := range pings {
-		variance += math.Pow(p-avgMs, 2)
+		variance += (p - avgMs) * (p - avgMs)
 	}
 	jitterMs = math.Sqrt(variance / float64(len(pings)))
 

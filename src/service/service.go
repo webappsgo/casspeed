@@ -135,9 +135,8 @@ WantedBy=multi-user.target
 func (m *Manager) uninstallLinux() error {
 	servicePath := fmt.Sprintf("/etc/systemd/system/%s.service", m.ServiceName)
 
-	if err := m.Stop(); err != nil {
-		// Ignore error if already stopped
-	}
+	// Stopping is best-effort during service removal.
+	_ = m.Stop()
 
 	if err := os.Remove(servicePath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -175,9 +174,8 @@ func (m *Manager) installDarwin() error {
 func (m *Manager) uninstallDarwin() error {
 	plistPath := m.getplistPath()
 
-	if err := m.Stop(); err != nil {
-		// Ignore error if already stopped
-	}
+	// Stopping is best-effort during service removal.
+	_ = m.Stop()
 
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return err

@@ -1,0 +1,776 @@
+# GitLab CI/CD Pipeline for casspeed
+# Equivalent to GitHub Actions: release.yml, beta.yml, devel.yml, docker.yml
+
+variables:
+  PROJECT_NAME: "casspeed"
+  PROJECT_ORG: "webappsgo"
+  CGO_ENABLED: "0"
+  GOOS: linux
+  GOARCH: amd64
+  # Go CI defaults to casjaysdev/go:latest — a docker/Dockerfile.build only for a genuine custom need, and then FROM casjaysdev/go:latest.
+  BUILD_IMAGE: "casjaysdev/go:latest"
+
+stages:
+  - build
+  - test
+  - package
+  - release
+  - security
+  - docker
+
+# =============================================================================
+# BUILD TEMPLATES
+# =============================================================================
+
+.go-build-template: &go-build
+  image: $BUILD_IMAGE
+  before_script:
+    # NOTE: all tooling (git, bash, govulncheck, cyclonedx-gomod, etc.) is pre-installed
+    # in casjaysdev/go:latest — never `apk add` or `go install` inside a CI job.
+    - export VERSION="${CI_COMMIT_TAG#v}"
+    - export COMMIT_ID="${CI_COMMIT_SHA:0:7}"
+    - export BUILD_EPOCH="$(date -u +%s)"
+    - export BUILD_DATE="$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")"
+    # OFFICIAL_SITE (optional): site.txt wins; otherwise use CI/CD Variables or leave empty
+    # Never guess or assume - must be explicitly defined by user
+    - |
+      if [ -f site.txt ]; then
+        export OFFICIAL_SITE="$(cat site.txt)"
+      else
+        export OFFICIAL_SITE="${OFFICIAL_SITE:-}"
+      fi
+    - export LDFLAGS="-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildEpoch=${BUILD_EPOCH}' -X 'main.OfficialSite=${OFFICIAL_SITE}'"
+
+# =============================================================================
+# RELEASE BUILDS (Tag Push: v* or semver)
+# =============================================================================
+
+build:linux-amd64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: linux
+    GOARCH: amd64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-amd64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-amd64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-amd64 ./src/agent; fi
+    # SBOM is release-level - generate once on this leg (cyclonedx-gomod is
+    # pre-installed in casjaysdev/go:latest)
+    - cyclonedx-gomod mod -json -output ${PROJECT_NAME}-sbom.cdx.json
+    # release's declarative `release:` block can't shell-expand and can't see
+    # a dotenv report the release job exports on itself - only upstream
+    # dotenv (via `needs:`) reaches it - so RELEASE_VERSION is exported here,
+    # in a build job the release job needs, scoped to tag pipelines by this
+    # job's own rules below
+    - echo "RELEASE_VERSION=${CI_COMMIT_TAG#v}" > release.env
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-linux-amd64*
+      - ${PROJECT_NAME}-sbom.cdx.json
+    reports:
+      dotenv: release.env
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:linux-arm64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: linux
+    GOARCH: arm64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-arm64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-arm64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-arm64 ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-linux-arm64*
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:darwin-amd64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: darwin
+    GOARCH: amd64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-amd64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-amd64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-amd64 ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-darwin-amd64*
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:darwin-arm64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: darwin
+    GOARCH: arm64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-arm64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-arm64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-arm64 ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-darwin-arm64*
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:windows-amd64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: windows
+    GOARCH: amd64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-amd64.exe ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-amd64.exe ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-amd64.exe ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-windows-amd64*.exe
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:windows-arm64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: windows
+    GOARCH: arm64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-arm64.exe ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-arm64.exe ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-arm64.exe ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-windows-arm64*.exe
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:freebsd-amd64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: freebsd
+    GOARCH: amd64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-amd64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-amd64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-amd64 ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-freebsd-amd64*
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+build:freebsd-arm64:
+  <<: *go-build
+  stage: build
+  variables:
+    GOOS: freebsd
+    GOARCH: arm64
+  script:
+    - go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-arm64 ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-arm64 ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-arm64 ./src/agent; fi
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-freebsd-arm64*
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+# =============================================================================
+# TEST
+# =============================================================================
+
+test:
+  <<: *go-build
+  stage: test
+  script:
+    - mkdir -p "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}"
+    - COVDIR="$(mktemp -d "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}/casspeed-XXXXXX")"
+    - go test -v -cover -coverprofile="$COVDIR/coverage.out" ./...
+    - test -s "$COVDIR/coverage.out" || { echo "ERROR: coverage profile is missing or empty" >&2; exit 1; }
+    - COVERAGE="$(go tool cover -func="$COVDIR/coverage.out" | awk '/^total:/ {gsub("%", "", $3); print $3}')"
+    - test -n "$COVERAGE" || { echo "ERROR: aggregate coverage could not be calculated" >&2; exit 1; }
+    - echo "Aggregate coverage: $COVERAGE%"
+    - >-
+      awk -v coverage="$COVERAGE" 'BEGIN { if (coverage < 60) { printf "ERROR: aggregate coverage is %s%%; required: >= 60%%\n", coverage > "/dev/stderr"; exit 1 } }'
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+    - if: $CI_COMMIT_BRANCH
+# =============================================================================
+# RELEASE (GitLab Release)
+# =============================================================================
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli@sha256:3f52d526f48e8d10625c722fa6d6423ee82aadeae1b1aa91f07b62551d96dacf
+  needs:
+    - build:linux-amd64
+    - build:linux-arm64
+    - build:darwin-amd64
+    - build:darwin-arm64
+    - build:windows-amd64
+    - build:windows-arm64
+    - build:freebsd-amd64
+    - build:freebsd-arm64
+    - test
+  script:
+    - echo "Creating release ${CI_COMMIT_TAG}"
+    # RELEASE_VERSION comes from build:linux-amd64's dotenv (via `needs:`) -
+    # the declarative `release:` block below can't shell-expand
+    # ${CI_COMMIT_TAG#v} itself, and a job's own dotenv report is never
+    # visible to that same job's declarative fields (dotenv only flows
+    # downstream to jobs that `needs:` the exporting job) - so the export
+    # must live upstream, not here
+    - echo "${RELEASE_VERSION}" > version.txt
+    # Source archive - the job runs in the full repo checkout (not an
+    # isolated directory), so already-staged release assets (binaries, sbom,
+    # checksums) are excluded to avoid archiving our own output
+    - >
+      tar --exclude='.git' --exclude='${PROJECT_NAME}-*' --exclude='version.txt'
+      --exclude='sha256.txt' --exclude='sha512.txt'
+      -czf ${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz .
+    # Consolidated sha256.txt/sha512.txt over every release asset (version.txt +
+    # binaries + SBOM + source archive) - the job runs in the full repo
+    # checkout, not an isolated directory, so the file list is explicitly
+    # scoped rather than a bare `ls`; pre-capturing it once (GitLab
+    # concatenates script items into one shell, so the var carries) ensures
+    # both checksum files cover the identical asset set and never hash each
+    # other or themselves
+    - FILES="version.txt ${PROJECT_NAME}-*"
+    - sha256sum $FILES > sha256.txt
+    - sha512sum $FILES > sha512.txt
+  artifacts:
+    paths:
+      - version.txt
+      - sha256.txt
+      - sha512.txt
+      - ${PROJECT_NAME}-*
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "Release $CI_COMMIT_TAG"
+    description: "Release created by GitLab CI"
+    assets:
+      links:
+        - name: "${PROJECT_NAME}-linux-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-linux-amd64?job=build:linux-amd64"
+        - name: "${PROJECT_NAME}-linux-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-linux-arm64?job=build:linux-arm64"
+        - name: "${PROJECT_NAME}-darwin-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-darwin-amd64?job=build:darwin-amd64"
+        - name: "${PROJECT_NAME}-darwin-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-darwin-arm64?job=build:darwin-arm64"
+        - name: "${PROJECT_NAME}-windows-amd64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-windows-amd64.exe?job=build:windows-amd64"
+        - name: "${PROJECT_NAME}-windows-arm64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-windows-arm64.exe?job=build:windows-arm64"
+        - name: "${PROJECT_NAME}-freebsd-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-freebsd-amd64?job=build:freebsd-amd64"
+        - name: "${PROJECT_NAME}-freebsd-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-freebsd-arm64?job=build:freebsd-arm64"
+        - name: "${PROJECT_NAME}-sbom.cdx.json"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-sbom.cdx.json?job=build:linux-amd64"
+        - name: "${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz?job=release"
+        - name: "sha256.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/sha256.txt?job=release"
+        - name: "sha512.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/sha512.txt?job=release"
+        - name: "version.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/version.txt?job=release"
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+
+# =============================================================================
+# BETA BUILDS (Push to beta branch)
+# =============================================================================
+
+build:beta:
+  <<: *go-build
+  stage: build
+  before_script:
+    # all tooling is pre-installed in casjaysdev/go:latest — never `apk add` inside a CI job
+    - export VERSION="$(date +%Y%m%d%H%M%S)-beta"
+    - export COMMIT_ID="${CI_COMMIT_SHA:0:7}"
+    - export BUILD_EPOCH="$(date -u +%s)"
+    - export BUILD_DATE="$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")"
+    # OFFICIAL_SITE (optional): site.txt wins; otherwise use CI/CD Variables or leave empty
+    - |
+      if [ -f site.txt ]; then
+        export OFFICIAL_SITE="$(cat site.txt)"
+      else
+        export OFFICIAL_SITE="${OFFICIAL_SITE:-}"
+      fi
+    - export LDFLAGS="-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildEpoch=${BUILD_EPOCH}' -X 'main.OfficialSite=${OFFICIAL_SITE}'"
+  script:
+    # Build all 8 platforms
+    - GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-amd64 ./src
+    - GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-arm64 ./src
+    - GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-amd64 ./src
+    - GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-arm64 ./src
+    - GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-amd64.exe ./src
+    - GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-arm64.exe ./src
+    - GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-amd64 ./src
+    - GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-arm64 ./src
+    # Build CLI if exists
+    - if [ -d "src/client" ]; then GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-arm64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-arm64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-amd64.exe ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-arm64.exe ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-arm64 ./src/client; fi
+    # Build Agent if exists
+    - if [ -d "src/agent" ]; then GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-arm64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-arm64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-amd64.exe ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-arm64.exe ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-arm64 ./src/agent; fi
+    # SBOM is release-level - generate once per build (cyclonedx-gomod is
+    # pre-installed in casjaysdev/go:latest)
+    - cyclonedx-gomod mod -json -output ${PROJECT_NAME}-sbom.cdx.json
+    # Export VERSION via dotenv so release:beta can consume the exact version
+    # embedded in these binaries - the release identity must match the embedded
+    # identity, never recompute the timestamp downstream
+    - echo "RELEASE_VERSION=${VERSION}" > release.env
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-*
+    reports:
+      dotenv: release.env
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "beta"
+
+release:beta:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli@sha256:3f52d526f48e8d10625c722fa6d6423ee82aadeae1b1aa91f07b62551d96dacf
+  needs:
+    - build:beta
+    - test
+  script:
+    - echo "Creating beta release ${RELEASE_VERSION}"
+    - echo "${RELEASE_VERSION}" > version.txt
+    # Source archive - the job runs in the full repo checkout (not an
+    # isolated directory), so already-staged release assets are excluded to
+    # avoid archiving our own output
+    - >
+      tar --exclude='.git' --exclude='${PROJECT_NAME}-*' --exclude='version.txt'
+      --exclude='sha256.txt' --exclude='sha512.txt'
+      -czf ${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz .
+    # Consolidated sha256.txt/sha512.txt over every release asset (version.txt +
+    # binaries + SBOM + source archive) - the job runs in the full repo
+    # checkout, not an isolated directory, so the file list is explicitly
+    # scoped rather than a bare `ls`; pre-capturing it once ensures both
+    # checksum files cover the identical asset set and never hash each other
+    # or themselves
+    - FILES="version.txt ${PROJECT_NAME}-*"
+    - sha256sum $FILES > sha256.txt
+    - sha512sum $FILES > sha512.txt
+  artifacts:
+    paths:
+      - version.txt
+      - sha256.txt
+      - sha512.txt
+      - ${PROJECT_NAME}-*
+    expire_in: 1 week
+  release:
+    tag_name: "$RELEASE_VERSION"
+    name: "Beta $RELEASE_VERSION"
+    description: "Beta release created by GitLab CI"
+    assets:
+      links:
+        - name: "${PROJECT_NAME}-linux-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-linux-amd64?job=build:beta"
+        - name: "${PROJECT_NAME}-linux-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-linux-arm64?job=build:beta"
+        - name: "${PROJECT_NAME}-darwin-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-darwin-amd64?job=build:beta"
+        - name: "${PROJECT_NAME}-darwin-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-darwin-arm64?job=build:beta"
+        - name: "${PROJECT_NAME}-windows-amd64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-windows-amd64.exe?job=build:beta"
+        - name: "${PROJECT_NAME}-windows-arm64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-windows-arm64.exe?job=build:beta"
+        - name: "${PROJECT_NAME}-freebsd-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-freebsd-amd64?job=build:beta"
+        - name: "${PROJECT_NAME}-freebsd-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-freebsd-arm64?job=build:beta"
+        - name: "${PROJECT_NAME}-sbom.cdx.json"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-sbom.cdx.json?job=build:beta"
+        - name: "${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz?job=release:beta"
+        - name: "sha256.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/sha256.txt?job=release:beta"
+        - name: "sha512.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/sha512.txt?job=release:beta"
+        - name: "version.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/version.txt?job=release:beta"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "beta"
+
+# =============================================================================
+# DEVEL BUILDS (Scheduled + main/master push) - All 8 platforms
+# =============================================================================
+
+build:devel:
+  <<: *go-build
+  stage: build
+  before_script:
+    # all tooling is pre-installed in casjaysdev/go:latest — never `apk add` inside a CI job
+    # Devel identity is the commit, not a timestamp - the devel
+    # release is a single rolling release, not a versioned tag
+    - export VERSION="${CI_COMMIT_SHA:0:7}"
+    - export COMMIT_ID="${CI_COMMIT_SHA:0:7}"
+    - echo "RELEASE_VERSION=${COMMIT_ID}" > release.env
+    - export BUILD_EPOCH="$(date -u +%s)"
+    - export BUILD_DATE="$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")"
+    # OFFICIAL_SITE (optional): site.txt wins; otherwise use CI/CD Variables or leave empty
+    - |
+      if [ -f site.txt ]; then
+        export OFFICIAL_SITE="$(cat site.txt)"
+      else
+        export OFFICIAL_SITE="${OFFICIAL_SITE:-}"
+      fi
+    - export LDFLAGS="-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildEpoch=${BUILD_EPOCH}' -X 'main.OfficialSite=${OFFICIAL_SITE}'"
+  script:
+    # Build all 8 platforms
+    - GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-amd64 ./src
+    - GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-linux-arm64 ./src
+    - GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-amd64 ./src
+    - GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-darwin-arm64 ./src
+    - GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-amd64.exe ./src
+    - GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-windows-arm64.exe ./src
+    - GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-amd64 ./src
+    - GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-freebsd-arm64 ./src
+    # Build CLI if exists
+    - if [ -d "src/client" ]; then GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-linux-arm64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-darwin-arm64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-amd64.exe ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-windows-arm64.exe ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-amd64 ./src/client; fi
+    - if [ -d "src/client" ]; then GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-cli-freebsd-arm64 ./src/client; fi
+    # Build Agent if exists
+    - if [ -d "src/agent" ]; then GOOS=linux GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=linux GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-linux-arm64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=darwin GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=darwin GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-darwin-arm64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=windows GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-amd64.exe ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=windows GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-windows-arm64.exe ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=freebsd GOARCH=amd64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-amd64 ./src/agent; fi
+    - if [ -d "src/agent" ]; then GOOS=freebsd GOARCH=arm64 go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${PROJECT_NAME}-agent-freebsd-arm64 ./src/agent; fi
+    # SBOM is release-level - generate once per build (cyclonedx-gomod is
+    # pre-installed in casjaysdev/go:latest)
+    - cyclonedx-gomod mod -json -output ${PROJECT_NAME}-sbom.cdx.json
+  artifacts:
+    paths:
+      - ${PROJECT_NAME}-*
+    reports:
+      dotenv: release.env
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+      when: manual
+      allow_failure: true
+
+release:devel:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli@sha256:3f52d526f48e8d10625c722fa6d6423ee82aadeae1b1aa91f07b62551d96dacf
+  needs:
+    - build:devel
+    - test
+  before_script:
+    # Delete the prior rolling `devel` release + tag - the devel channel is a
+    # single rolling release, not a versioned tag, so the old one must go
+    # before the new one is published
+    - >
+      curl --request DELETE --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}"
+      "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/releases/devel" || true
+    - >
+      curl --request DELETE --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}"
+      "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags/devel" || true
+  script:
+    # Devel identity is the commit, not a timestamp - CI_COMMIT_SHA is a
+    # predefined variable, so it needs no cross-job dotenv passthrough
+    - echo "${CI_COMMIT_SHA:0:7}" > version.txt
+    # Source archive - the job runs in the full repo checkout (not an
+    # isolated directory), so already-staged release assets are excluded to
+    # avoid archiving our own output
+    - >
+      tar --exclude='.git' --exclude='${PROJECT_NAME}-*' --exclude='version.txt'
+      --exclude='sha256.txt' --exclude='sha512.txt'
+      -czf ${PROJECT_NAME}-${CI_COMMIT_SHA:0:7}-source.tar.gz .
+    # Consolidated sha256.txt/sha512.txt over every release asset (version.txt +
+    # binaries + SBOM + source archive) - the job runs in the full repo
+    # checkout, not an isolated directory, so the file list is explicitly
+    # scoped rather than a bare `ls`; pre-capturing it once ensures both
+    # checksum files cover the identical asset set and never hash each other
+    # or themselves
+    - FILES="version.txt ${PROJECT_NAME}-*"
+    - sha256sum $FILES > sha256.txt
+    - sha512sum $FILES > sha512.txt
+  artifacts:
+    paths:
+      - version.txt
+      - sha256.txt
+      - sha512.txt
+      - ${PROJECT_NAME}-*
+    expire_in: 1 day
+  release:
+    tag_name: "devel"
+    name: "Devel Build ${RELEASE_VERSION}"
+    description: "Devel build: ${RELEASE_VERSION}"
+    assets:
+      links:
+        - name: "${PROJECT_NAME}-linux-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-linux-amd64?job=build:devel"
+        - name: "${PROJECT_NAME}-linux-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-linux-arm64?job=build:devel"
+        - name: "${PROJECT_NAME}-darwin-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-darwin-amd64?job=build:devel"
+        - name: "${PROJECT_NAME}-darwin-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-darwin-arm64?job=build:devel"
+        - name: "${PROJECT_NAME}-windows-amd64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-windows-amd64.exe?job=build:devel"
+        - name: "${PROJECT_NAME}-windows-arm64.exe"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-windows-arm64.exe?job=build:devel"
+        - name: "${PROJECT_NAME}-freebsd-amd64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-freebsd-amd64?job=build:devel"
+        - name: "${PROJECT_NAME}-freebsd-arm64"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-freebsd-arm64?job=build:devel"
+        - name: "${PROJECT_NAME}-sbom.cdx.json"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-sbom.cdx.json?job=build:devel"
+        - name: "${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/${PROJECT_NAME}-${RELEASE_VERSION}-source.tar.gz?job=release:devel"
+        - name: "sha256.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/sha256.txt?job=release:devel"
+        - name: "sha512.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/sha512.txt?job=release:devel"
+        - name: "version.txt"
+          url: "${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_BRANCH}/raw/version.txt?job=release:devel"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+      when: manual
+      allow_failure: true
+
+# =============================================================================
+# DOCKER BUILDS
+# =============================================================================
+
+docker:build:
+  stage: docker
+  image: docker:cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_BUILDKIT: "1"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker buildx create --name multiarch-builder --use 2>/dev/null || docker buildx use multiarch-builder
+  script:
+    - |
+      # Determine version and tags based on trigger
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        VERSION="${CI_COMMIT_TAG#v}"
+        YYMM=$(date +%y%m)
+        TAGS="-t $CI_REGISTRY_IMAGE:$VERSION -t $CI_REGISTRY_IMAGE:latest -t $CI_REGISTRY_IMAGE:$YYMM -t $CI_REGISTRY_IMAGE:${CI_COMMIT_SHA:0:7}"
+      elif [ "$CI_COMMIT_BRANCH" = "beta" ]; then
+        VERSION="$(date -u +%Y%m%d%H%M%S)-beta"
+        TAGS="-t $CI_REGISTRY_IMAGE:beta -t $CI_REGISTRY_IMAGE:${CI_COMMIT_SHA:0:7}"
+      else
+        VERSION="${CI_COMMIT_SHA:0:7}"
+        TAGS="-t $CI_REGISTRY_IMAGE:${CI_COMMIT_SHA:0:7}"
+      fi
+      BUILD_EPOCH="$(date -u +%s)"
+      if [ -f site.txt ]; then OFFICIAL_SITE="$(cat site.txt)"; else OFFICIAL_SITE="${OFFICIAL_SITE:-}"; fi
+      BUILD_DATE="$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")"
+    - |
+      # Build multi-arch with OCI labels and manifest annotations
+      docker buildx build \
+        -f docker/Dockerfile \
+        --platform linux/amd64,linux/arm64 \
+        --build-arg VERSION="${VERSION}" \
+        --build-arg COMMIT_ID="${CI_COMMIT_SHA:0:7}" \
+        --build-arg BUILD_DATE="${BUILD_DATE}" \
+        --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
+        --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
+        --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.title=${PROJECT_NAME}" \
+        --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
+        --label "org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
+        --label "org.opencontainers.image.licenses=MIT" \
+        --label "org.opencontainers.image.version=${VERSION}" \
+        --label "org.opencontainers.image.created=${BUILD_DATE}" \
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:0:7}" \
+        --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}" \
+        --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
+        --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
+        --annotation "manifest:org.opencontainers.image.licenses=MIT" \
+        --annotation "manifest:org.opencontainers.image.version=${VERSION}" \
+        --annotation "manifest:org.opencontainers.image.created=${BUILD_DATE}" \
+        --annotation "manifest:org.opencontainers.image.revision=${CI_COMMIT_SHA:0:7}" \
+        --annotation "manifest:org.opencontainers.image.url=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.source=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
+        $TAGS \
+        --push \
+        .
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH == "beta"
+    # Any other branch also builds/pushes {commit_id} (no :devel tag — see docker:build-devel)
+    - if: $CI_COMMIT_BRANCH
+
+docker:build-devel:
+  stage: docker
+  image: docker:cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_BUILDKIT: "1"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker buildx create --name multiarch-builder --use 2>/dev/null || docker buildx use multiarch-builder
+  script:
+    - |
+      BUILD_EPOCH="$(date -u +%s)"
+      if [ -f site.txt ]; then OFFICIAL_SITE="$(cat site.txt)"; else OFFICIAL_SITE="${OFFICIAL_SITE:-}"; fi
+      BUILD_DATE="$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")"
+    - |
+      # Build multi-arch devel image with OCI labels and manifest annotations
+      docker buildx build \
+        -f docker/Dockerfile.dev \
+        --platform linux/amd64,linux/arm64 \
+        --build-arg VERSION="${CI_COMMIT_SHA:0:7}" \
+        --build-arg COMMIT_ID="${CI_COMMIT_SHA:0:7}" \
+        --build-arg BUILD_DATE="${BUILD_DATE}" \
+        --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
+        --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
+        --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.title=${PROJECT_NAME}-devel" \
+        --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
+        --label "org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \
+        --label "org.opencontainers.image.licenses=MIT" \
+        --label "org.opencontainers.image.version=${CI_COMMIT_SHA:0:7}" \
+        --label "org.opencontainers.image.created=${BUILD_DATE}" \
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA:0:7}" \
+        --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
+        --label "org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}-devel" \
+        --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
+        --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \
+        --annotation "manifest:org.opencontainers.image.licenses=MIT" \
+        --annotation "manifest:org.opencontainers.image.version=${CI_COMMIT_SHA:0:7}" \
+        --annotation "manifest:org.opencontainers.image.created=${BUILD_DATE}" \
+        --annotation "manifest:org.opencontainers.image.revision=${CI_COMMIT_SHA:0:7}" \
+        --annotation "manifest:org.opencontainers.image.url=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.source=${CI_PROJECT_URL}" \
+        --annotation "manifest:org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
+        -t $CI_REGISTRY_IMAGE:devel \
+        --push \
+        .
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master"
+
+lint:
+  stage: test
+  image: casjaysdev/go:latest
+  script:
+    - go vet ./...
+    - staticcheck ./...
+    - go-licenses csv ./... | tee licenses.csv
+    - '! grep -iE "GPL|AGPL|LGPL" licenses.csv'
+  artifacts:
+    paths:
+      - licenses.csv
+    expire_in: 7 days
+
+secret-scan:
+  stage: security
+  image: trufflesecurity/trufflehog@sha256:9c7a8325d43a4af2960d3f21d61a08981d8a1bf0542e007efa2e47097e386452
+  script:
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = schedule ]; then
+        trufflehog git file://. --results=verified --exclude-paths=.github/trufflehog-exclude.txt --fail
+      else
+        trufflehog git file://. --since-commit HEAD~1 --results=verified,unknown --exclude-paths=.github/trufflehog-exclude.txt --fail
+      fi
+
+vulnerability-scan:
+  stage: security
+  image: casjaysdev/go:latest
+  script:
+    - govulncheck ./...
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" || $CI_COMMIT_BRANCH || $CI_COMMIT_TAG'
+
+workflow-policy:
+  stage: security
+  image: casjaysdev/go:latest
+  script:
+    - |
+      if rg -n 'uses:.*@(v[0-9]|main|master)' .github/workflows .gitea/workflows .forgejo/workflows; then
+        echo "Unpinned workflow action found" >&2
+        exit 1
+      fi
+      if rg -n '^\s*image: [^@]+(:[^@]+)?$' .gitlab-ci.yml; then
+        echo "Unpinned GitLab image found" >&2
+        exit 1
+      fi
+
+docker-scan:
+  stage: security
+  image: docker:cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  script:
+    - docker build --build-arg VERSION=ci --tag casspeed:ci -f docker/Dockerfile .
+    - docker save casspeed:ci -o /tmp/casspeed-ci-image.tar
+    - docker run --rm -v /tmp/casspeed-ci-image.tar:/tmp/casspeed-ci-image.tar aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb image --input /tmp/casspeed-ci-image.tar --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH

@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -142,5 +144,46 @@ func TestContainerPaths(t *testing.T) {
 	}
 	if p.Data != "/data" {
 		t.Errorf("Data = %q, want /data", p.Data)
+	}
+}
+
+func TestEnsureCreatesConfiguredDirectories(t *testing.T) {
+	root := t.TempDir()
+	p := &Paths{
+		Config:   filepath.Join(root, "config"),
+		Data:     filepath.Join(root, "data"),
+		Cache:    filepath.Join(root, "cache"),
+		Log:      filepath.Join(root, "log"),
+		Backup:   filepath.Join(root, "backup"),
+		DB:       filepath.Join(root, "data", "db"),
+		PID:      filepath.Join(root, "run", "casspeed.pid"),
+		SSL:      filepath.Join(root, "config", "ssl"),
+		Security: filepath.Join(root, "config", "security"),
+	}
+	if err := p.Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	for _, dir := range []string{
+		p.Config, p.Data, p.Cache, p.Log, p.Backup, p.DB,
+		filepath.Join(p.SSL, "letsencrypt"), filepath.Join(p.SSL, "local"),
+		filepath.Join(p.Security, "geoip"), filepath.Join(p.Security, "blocklists"),
+		filepath.Join(p.Security, "cve"), filepath.Dir(p.PID),
+	} {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			t.Errorf("Ensure did not create directory %q: info=%v err=%v", dir, info, err)
+		}
+	}
+}
+
+func TestEnsureReportsDirectoryCreationFailure(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(filePath, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &Paths{Config: filePath}
+	if err := p.Ensure(); err == nil {
+		t.Fatal("Ensure should report when a configured directory is a regular file")
 	}
 }

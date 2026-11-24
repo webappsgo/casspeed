@@ -5,44 +5,24 @@ on:
     tags:
       - 'v*'
       - '[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch: {}
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+env:
+  PROJECT_NAME: casspeed
 
 jobs:
-  ensure-build-image:
-    runs-on: ubuntu-latest
-    permissions:
-      packages: read
-    outputs:
-      image: ${{ steps.pull.outputs.image }}
-    steps:
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: pull
-        name: Pull build image (fail fast if missing)
-        run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:build"
-          if ! docker pull "$IMAGE"; then
-            echo "::error::Build image $IMAGE not found."
-            echo "::error::Trigger the 'Build Toolchain Image' workflow (workflow_dispatch) to create it."
-            exit 1
-          fi
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: ensure-build-image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container:
-      image: ${{ needs.ensure-build-image.outputs.image }}
+      image: casjaysdev/go:latest
+      options: "--user 0:0"
     strategy:
       matrix:
         include:
@@ -64,116 +44,169 @@ jobs:
             goarch: amd64
           - goos: freebsd
             goarch: arm64
-    env:
-      CGO_ENABLED: "0"
+
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set build info
         run: |
-          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+          echo "COMMIT_ID=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+          BUILD_EPOCH=$(date -u +%s)
+          echo "BUILD_EPOCH=$BUILD_EPOCH" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_ENV
+          # OFFICIAL_SITE (optional): site.txt wins; otherwise use repository secrets or leave empty
+          # Never guess or assume - must be explicitly defined by user
+          if [ -f site.txt ]; then
+            echo "OFFICIAL_SITE=$(cat site.txt)" >> $GITHUB_ENV
+          else
+            echo "OFFICIAL_SITE=${{ secrets.OFFICIAL_SITE }}" >> $GITHUB_ENV
+          fi
 
-      - name: Build server binary
+      - name: Build server
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
-          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -ldflags "$LDFLAGS" \
-            -o casspeed-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }} \
-            ./src
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildEpoch=${{ env.BUILD_EPOCH }}' -X 'main.OfficialSite=${{ env.OFFICIAL_SITE }}'"
+          go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${{ env.PROJECT_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./src
 
-      - name: Build CLI binary
+      # CLI build - only if src/client/ directory exists
+      - name: Build CLI
+        if: hashFiles('src/client/**') != ''
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
-          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -ldflags "$LDFLAGS" \
-            -o casspeed-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }} \
-            ./src/client
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildEpoch=${{ env.BUILD_EPOCH }}' -X 'main.OfficialSite=${{ env.OFFICIAL_SITE }}'"
+          go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${{ env.PROJECT_NAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./src/client
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Upload server artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            casspeed-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }}
-            casspeed-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext || '' }}
+          name: ${{ env.PROJECT_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.PROJECT_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+
+      - name: Upload CLI artifact
+        if: hashFiles('src/client/**') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ env.PROJECT_NAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.PROJECT_NAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+
+      # Agent build - only if src/agent/ directory exists
+      - name: Build Agent
+        if: hashFiles('src/agent/**') != ''
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildEpoch=${{ env.BUILD_EPOCH }}' -X 'main.OfficialSite=${{ env.OFFICIAL_SITE }}'"
+          go build -buildvcs=false -trimpath -ldflags "${LDFLAGS}" -o ${{ env.PROJECT_NAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./src/agent
+
+      - name: Upload Agent artifact
+        if: hashFiles('src/agent/**') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ env.PROJECT_NAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.PROJECT_NAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+
+      # SBOM is release-level - generate once on the linux/amd64 leg (cyclonedx-gomod is pre-installed in the image)
+      - name: Generate SBOM
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: cyclonedx-gomod mod -json -output ${{ env.PROJECT_NAME }}-sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ env.PROJECT_NAME }}-sbom
+          path: ${{ env.PROJECT_NAME }}-sbom.cdx.json
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    permissions:
+      # create GitHub release + upload assets, plus tag ownership (Ensure release tag)
+      contents: write
+      # OIDC token for artifact attestation
+      id-token: write
+      # GitHub artifact attestations (SBOM, provenance)
+      attestations: write
+
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # required: full history needed to inspect and push tags
+          fetch-depth: 0
+
+      - name: Ensure release tag
+        run: |
+          ref="${{ github.ref }}"
+          if [[ "$ref" != refs/tags/* ]]; then
+            echo "::error::release.yml triggered on non-tag ref '$ref'. Releases require a tag push (refs/tags/v...)."
+            exit 1
+          fi
+          tag="${ref#refs/tags/}"
+          if printf '%s' "$tag" | grep -qP '[[:space:][:cntrl:]]'; then
+            echo "::error::Tag '$tag' contains whitespace or control characters and is not a valid GitHub tag name."
+            exit 1
+          fi
+          # Delete existing tag (local + remote) then recreate at current HEAD
+          git tag -d "$tag" 2>/dev/null || true
+          git push origin ":refs/tags/$tag" 2>/dev/null || true
+          git tag "$tag"
+          git push origin "refs/tags/$tag"
+          echo "Tag '$tag' ensured at $(git rev-parse HEAD)"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          path: binaries
+          merge-multiple: true
 
       - name: Set version
         run: |
-          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
+          TAG="${GITHUB_REF_NAME}"
+          # VERSION for version.txt (strip v if present)
+          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+          # RELEASE_TAG: add v prefix only if semver without v
+          if [[ "$TAG" == v* ]]; then
+            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          elif [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "RELEASE_TAG=v$TAG" >> $GITHUB_ENV
+          else
+            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          fi
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          path: dist/
-          merge-multiple: true
+      - name: Create version.txt
+        run: echo "${{ env.VERSION }}" > binaries/version.txt
 
-      - name: Delete existing release/tag if exists
+      - name: Create source archive
         run: |
-          gh release delete ${{ env.VERSION }} --yes 2>/dev/null || true
-          git tag -d ${{ env.VERSION }} 2>/dev/null || true
-          git push origin :refs/tags/${{ env.VERSION }} 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tar --exclude='.git' --exclude='.github' --exclude='.gitea' \
+            --exclude='binaries' --exclude='releases' --exclude='*.tar.gz' \
+            -czf binaries/${{ env.PROJECT_NAME }}-${{ env.VERSION }}-source.tar.gz .
 
-      - name: Create GitHub release
+      - name: Generate checksums
         run: |
-          gh release create ${{ env.VERSION }} dist/* \
-            --title "casspeed ${{ env.VERSION }}" \
-            --notes "Release ${{ env.VERSION }}" \
-            --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cd binaries
+          FILES="$(ls)"
+          sha256sum $FILES > sha256.txt
+          sha512sum $FILES > sha512.txt
 
-  docker:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Set build info
-        run: |
-          if [ -f release.txt ]; then echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV; else echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV; fi
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
-
-      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
-
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
-
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          subject-path: binaries/${{ env.PROJECT_NAME }}-*
 
-      - uses: docker/metadata-action@902fa8ec7d6ecbea8a09e18948778cf2c82b2b4f
-        id: meta
+      - name: Create Release
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-          annotations: |
-            org.opencontainers.image.description=Self-hosted speed testing server
-            org.opencontainers.image.title=casspeed
-            org.opencontainers.image.licenses=MIT
-
-      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          provenance: false
-          annotations: ${{ steps.meta.outputs.annotations }}
-          labels: ""
-          tags: ${{ steps.meta.outputs.tags }}
-          build-args: |
-            VERSION=${{ env.VERSION }}
-            BUILD_DATE=${{ env.BUILD_DATE }}
-            COMMIT_ID=${{ env.COMMIT_ID }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: binaries/*
+          generate_release_notes: true
+          make_latest: true

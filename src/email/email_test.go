@@ -46,3 +46,28 @@ func TestSendEmailVerification_WhenDisabled(t *testing.T) {
 		t.Error("expected error when email is disabled")
 	}
 }
+
+func TestSendPasswordReset_WhenSMTPUnavailable(t *testing.T) {
+	svc := NewService(&Config{
+		Enabled:  true,
+		Host:     "127.0.0.1",
+		Port:     0,
+		Username: "mailer@example.com",
+		From:     "noreply@example.com",
+	})
+	if err := svc.SendPasswordReset("user@example.com", "reset-token", "https://example.com"); err == nil {
+		t.Fatal("SendPasswordReset should report an unavailable SMTP endpoint")
+	}
+}
+
+func TestSendEmailVerification_WhenSMTPUnavailable(t *testing.T) {
+	svc := NewService(&Config{
+		Enabled:  true,
+		Host:     "127.0.0.1",
+		Port:     0,
+		Username: "mailer@example.com",
+	})
+	if err := svc.SendEmailVerification("user@example.com", "verify-token", "https://example.com"); err == nil {
+		t.Fatal("SendEmailVerification should report an unavailable SMTP endpoint")
+	}
+}
