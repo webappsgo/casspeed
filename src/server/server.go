@@ -121,7 +121,6 @@ func (s *Server) setupMiddleware() {
 	s.Router.Use(securityHeaders(s.Config.Server.SSL.Enabled))
 
 	s.Router.Use(middleware.RequestID)
-	s.Router.Use(middleware.RealIP)
 	s.Router.Use(middleware.Logger)
 	s.Router.Use(middleware.Recoverer)
 	s.Router.Use(s.rateLimitMiddleware)
