@@ -1,114 +1,84 @@
-# casspeed - Project Idea
+# CasSpeed — Project Idea
 
-## Purpose
+## Project description
 
-CasSpeed is a self-hosted internet speed testing service - a free, open-source alternative to speedtest.net. It provides accurate, privacy-respecting speed testing with no ads, no tracking, and no feature gating. All features are completely free and available to all users.
+CasSpeed is a self-hosted, privacy-respecting internet speed testing service and a free, open-source alternative to commercial speed test sites. Home users, network administrators, and developers use it to measure and track connection quality without advertisements, tracking, or paid feature gates.
 
-## Target Users
+## Project variables
 
-- Home users wanting to test and track internet speeds over time
-- Network administrators monitoring connection quality across devices
-- Developers needing speed test automation via API for CI/CD or monitoring
-- Self-hosters wanting a privacy-respecting speed testing solution
+project_name: casspeed
+project_org: casapps
+internal_name: casspeed
+internal_org: casapps
+api_version: v1
 
-## Features
+## Business logic
 
-- **Multi-threaded Speed Tests**: Download and upload tests using parallel connections for accurate results
-- **Real-time Progress**: WebSocket-based live updates during test execution (ping, download, upload phases)
-- **Shareable Results**: Generate share codes with PNG/SVG image export and Open Graph meta tags
-- **Multi-user Support**: User accounts with device tracking and test history
-- **API Tokens**: Programmatic access for automation and scripting
-- **CLI Client**: Terminal UI (TUI) mode with real-time graphs using bubbletea
-- **Runtime Diagnostics**: Debug-only expvar output reports runtime details; request count and cumulative duration are collected in every mode
-- **Privacy-First**: Client IPs are hashed before storage, never stored in plain text
-- **Docker Support**: Multi-platform container deployment
+### Product scope & non-goals
 
-## Data Models
+- Measure download and upload throughput, latency, jitter, and packet loss.
+- Use parallel connections for representative throughput measurements and show live progress through ping, download, and upload phases.
+- Test duration is configurable, with a default of 10 seconds per phase.
+- Let anonymous visitors run tests. Anonymous results are retained for a configurable period, 30 days by default; anonymous visitors cannot keep account history.
+- Let registered users keep test history, associate tests with named devices, and use API tokens for automation.
+- Let a test owner, including an anonymous visitor for the active session's result, explicitly create a shareable result page and export it as PNG or SVG. Shared pages provide social preview metadata.
+- PNG and SVG exports use the same styling as the shared result page.
+- Provide a command-line client with an interactive terminal interface and live test progress.
+- All product features are free. The product has no advertisements, tracking, or feature gating.
+- Speed testing has no required external API dependency.
+- Organizations and custom domains are not part of the product scope.
 
-**SpeedTest**: Single speed test result
-- id, user_id (optional), device_id (optional), timestamp
-- download_mbps, upload_mbps, ping_ms, jitter_ms, packet_loss
-- client_ip_hash, user_agent, server_id
-- share_code (optional), share_views
+### Roles & permissions
 
-**User**: Registered user account
-- id, username, email, share_show_username
+- **Anonymous visitor:** run tests and view their immediate results in the originating browser session; may explicitly create a share link; cannot retain account history.
+- **Regular user:** manage their own profile, devices, API tokens, and test history; create and manage shares for tests they own.
+- **Server admin:** configure and administer the service using the mandatory server administration features in AI.md.
+- Users cannot read or change another user's private account data, devices, tokens, or history.
 
-**Device**: User's device for history tracking
-- id, user_id, name, last_seen
+### Data model & sensitivity
 
-**APIToken**: API access token
-- id, user_id, token (hashed), name, last_used
+- **Speed test:** identifier, optional user and device association, timestamp, download/upload Mbps, ping/jitter milliseconds, packet loss, hashed client IP, user agent, server identifier, optional share code, and share-view count. Results may be anonymous or associated with an account. Unshared results are visible only to the originating anonymous session or owning account; shared results expose only fields allowed by the owner's preference.
+- **User:** identifier, username, email address, and whether the username may appear on shared results. Account email and profile data are private.
+- **Device:** identifier, owning user, user-defined name, and last-seen time. Device records are private to their owner.
+- **API token:** identifier, owning user, name, hashed user token, and last-used time. The raw token is a secret and is never stored or shown again after creation. Tokens follow the format required by AI.md PART 11.
+- **Share:** an eight-character base62 code associated with a result; valid only while the result exists. A share may expose only the result fields permitted by the owner's sharing preference.
+- Client IP addresses are never stored in plaintext. Deleted user data is removed immediately; anonymous results expire according to configured retention; authenticated history has no automatic expiry. Device names are user-defined and 1–64 characters long.
 
-## Business Rules
+### Trust boundaries & external services
 
-**Speed Testing**:
-- Tests measure download, upload, latency, jitter, and packet loss
-- Multi-threaded connections for accurate throughput measurement
-- Test duration is configurable (default: 10 seconds per phase)
-- Results stored with optional user/device association
+- Internet clients and all request data are untrusted, including forwarded-address headers unless the deployment explicitly trusts the forwarding proxy.
+- The service operator controls the host, configuration, database, and server-admin account. Regular users control only their own account data.
+- The speed-test service does not depend on external APIs or remote test servers; measurement traffic is handled by the CasSpeed server itself.
+- Users may submit API tokens from automation clients. Tokens grant access only to the owning user's permitted resources and must be revocable.
 
-**User Management**:
-- Username: 3-32 characters, alphanumeric and underscores
-- Email: Valid format, unique per account
-- Device names: 1-64 characters, user-defined
-- API tokens: prefix `key_`, 32 character hex value
+### Threat model & abuse cases
 
-**Sharing**:
-- Share codes: 8-character alphanumeric (base62)
-- Share pages include Open Graph meta for social media previews
-- Image export (PNG/SVG) uses same styling as web UI
+- **Protected assets:** account credentials, API tokens, private test history, device records, database contents, server availability, and the integrity of reported measurements.
+- **Threats:** credential stuffing, account enumeration, token theft, share-code guessing, history scraping, forged proxy headers, malformed inputs, oversized uploads, and resource exhaustion through concurrent or repeated tests.
+- **Required outcomes:** authentication failures do not reveal account existence; tokens and passwords are not stored in recoverable form; private history is owner-scoped; share codes are unguessable and reveal only shareable fields; request and test resources are bounded; client IP privacy is preserved; input and output are validated for their use context.
+- **Operational failure:** unavailable storage or measurement resources must produce a safe error without exposing internal details or corrupting saved results.
 
-**Data Retention**:
-- Anonymous test results: 30 days default (configurable)
-- Authenticated user results: indefinite
-- Share codes: valid while test result exists
-- Deleted user data: immediately removed
+### Security decisions & exceptions
 
-**Privacy**:
-- IP addresses are hashed for privacy (never stored in plain text)
-- Anonymous users can run tests but cannot save history
+- Client IP privacy is a product requirement: only a one-way hash may be persisted.
+- Sharing is opt-in per result and does not make the owner's private account history public.
+- There are no intentional security exceptions or weaker compatibility modes.
 
-## Endpoints
+### API routes
 
-**Speed Test**:
-- Start test: Initiate a new speed test, returns test ID
-- WebSocket status: Real-time progress updates during test
-- Download test: Endpoint for download speed measurement
-- Upload test: Endpoint for upload speed measurement
-- Get result: Retrieve completed test result by ID
-- Get history: List user's test history with pagination
+The API version is `v1`. There is no external-service compatibility API.
 
-**Share**:
-- Get share page: HTML page for shared result (with OG meta)
-- Get share PNG: PNG image of test result
-- Get share SVG: SVG image of test result
-- Create share: Generate share code for a test result
+| Method and route | Auth | Purpose | Request / response | Browser page |
+|---|---|---|---|---|
+| `POST /api/v1/speed-tests` | Anonymous or authenticated | Start a test | Test options; returns a test identifier and initial state | `GET /` starts and displays the test |
+| `GET /api/v1/speed-tests/{id}/status` | Originating anonymous session or owning account | Stream live phase and progress updates over WebSocket | Test identifier; progress events | `GET /speed-tests/{id}` displays progress |
+| `GET /api/v1/speed-tests/{id}/download` | Originating test session | Supply download measurement data | Test identifier and transfer parameters; returns bounded test bytes | Machine-only transfer endpoint used by the test page |
+| `POST /api/v1/speed-tests/{id}/uploads` | Originating test session | Receive upload measurement data | Test identifier and bounded payload; returns accepted byte count and timing | Machine-only transfer endpoint used by the test page |
+| `GET /api/v1/speed-tests/{id}` | Originating anonymous session or owning account | Retrieve an unshared result | Test identifier; returns the owner's result | `GET /speed-tests/{id}` |
+| `GET /api/v1/speed-tests` | Authenticated user | List the current user's history with pagination | Pagination parameters; returns result summaries and pagination metadata | `GET /history` |
+| `POST /api/v1/speed-tests/{id}/shares` | Originating anonymous session or owning account | Explicitly create a share for a result | Sharing preference; returns the share code and URL | Share form on `GET /speed-tests/{id}` |
+| `GET /api/v1/shares/{code}` | Public | Retrieve fields allowed on a shared result | Share code; returns public result data | `GET /shares/{code}` |
+| `GET /api/v1/shares/{code}/images/png` | Public | Export a shared result image | Share code; returns PNG image bytes | Linked from `GET /shares/{code}` |
+| `GET /api/v1/shares/{code}/images/svg` | Public | Export a shared result image | Share code; returns SVG image bytes | Linked from `GET /shares/{code}` |
 
-**User** (per PART 33):
-- Register, Login, Profile, Devices, API tokens
-
-**Admin** (per PART 17):
-- Dashboard, Settings, User management, Statistics
-
-## Data Sources
-
-- SQLite database (default) - stores all test results, users, devices
-- PostgreSQL/MySQL (cluster mode) - for high-availability deployments
-- No external API dependencies - all tests run locally
-
-Data Location:
-- Config: `{config_dir}/casapps/casspeed/server.yml`
-- Database: `{data_dir}/casapps/casspeed/casspeed.db`
-- Logs: `{log_dir}/casapps/casspeed/`
-- Backups: `{backup_dir}/casapps/casspeed/`
-
-## Business Logic
-
-### Coverage Threshold
-
-Test coverage threshold: **60%**
-
-Rationale: The 60% unit-test floor follows the authoritative AI.md gate and applies to aggregate
-`go test -cover ./...` coverage across all packages. The TUI and main entry point remain in that
-aggregate; integration tests in `tests/` cover behavior that requires a terminal or OS signals.
+The authentication, profile, device, token, and server-administration routes are defined by AI.md's required server features and selected PART 34; this inventory lists only CasSpeed-specific routes.
