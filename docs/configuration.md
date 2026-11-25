@@ -64,7 +64,7 @@ web:
     theme: dark
   cors: "*"
   security:
-    publish_pgp_key: false
+    publish_pgp_key: true
 test:
   max_concurrent: 3
   min_interval: 5
@@ -85,4 +85,4 @@ Use `--mode production` for a deployed service. `--debug` enables diagnostics an
 
 The server creates `{config_dir}/secrets.yml` with mode `0600`. It stores the generated `server.token` operator credential and the security-report encryption key. The operator token uses the `adm_` prefix and is printed once when first generated; save it securely. The file is the durable copy, and subsequent starts do not print the token again. Never commit this file or paste its values into logs, documentation, or issue reports.
 
-The public PGP endpoint is disabled by default. Configure `web.security.publish_pgp_key` to publish the active public key; the matching private key remains encrypted in the configuration directory. Security report retention is controlled by `server.security.reports.retention_days`.
+Public PGP key publication is enabled by default. Set `web.security.publish_pgp_key` to `false` to disable the endpoint; the matching private key remains encrypted in the configuration directory. Security report retention is controlled by `server.security.reports.retention_days`.

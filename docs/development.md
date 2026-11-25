@@ -7,7 +7,7 @@ CasSpeed is a Go project. Docker, Make, and Git are required; the supported Go t
 ```sh
 make build       # server and CLI for supported platforms
 make test        # go vet, package tests, and aggregate coverage gate
-make docker      # local multi-architecture image build; does not push
+make docker      # multi-architecture image build; does not push or load it locally
 make dev         # local platform binaries in a project-scoped temp directory
 ```
 

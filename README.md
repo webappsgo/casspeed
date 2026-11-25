@@ -11,7 +11,7 @@ CasSpeed is a self-hosted, privacy-respecting internet speed testing service. It
 
 ## Features
 
-- Browser and command-line speed tests with live progress
+- Browser speed tests with live progress and command-line tests for terminals or scripts
 - Anonymous testing and registered-user history
 - Private device and API-token management
 - Explicitly shared results with PNG and SVG exports

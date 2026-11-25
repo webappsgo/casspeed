@@ -20,4 +20,4 @@ The public browser pages live below `/server/`: about, privacy, help, terms, DPO
 
 ## Privacy model
 
-An unshared result is visible only to the originating anonymous session or owning account. A result is public only after its owner explicitly creates a share link. Anonymous result retention is controlled by the server operator; account history remains until deleted.
+An unshared result is visible only to the originating anonymous session or owning account. A result is public only after its owner explicitly creates a share link. Anonymous results expire according to the configured retention period; authenticated history has no automatic expiry. Account deletion and individual result deletion are not currently exposed through the account UI or API.
