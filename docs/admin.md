@@ -10,7 +10,7 @@ The administrator dashboard is at `/server/{admin_path}/`. Server management rou
 
 ## Administration API
 
-Admin API routes are rooted at `/api/v1/server/{admin_path}/` and require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes use the admin session and require CSRF protection; they should work without JavaScript.
+The implemented Admin API currently exposes `GET` and `PUT /api/v1/server/{admin_path}/settings`; both require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes use the admin session and require CSRF protection; they should work without JavaScript. Other admin sections are informational pages and do not currently provide editing controls.
 
 ## Operational guidance
 

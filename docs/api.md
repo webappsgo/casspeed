@@ -23,7 +23,7 @@ An unshared result is visible only to its owning account or the anonymous browse
 
 Registration, login, profile, device, token, and server administration operations are listed in the live OpenAPI document. Public server pages also have JSON representations under `/api/v1/server/`, including the health, security, help, privacy, and about pages. Contact form submissions are two-step: submit the form and captcha to receive a review, then confirm it with the returned review token.
 
-Password reset requests use `POST /api/v1/server/auth/password/forgot`. With SMTP configured, the service emails a one-hour, single-use link. Complete the reset with `POST /api/v1/server/auth/password/reset` or use the server-rendered form at `/server/auth/password/reset`; completing a reset changes the stored password and revokes the user's existing sessions.
+Password reset requests use `POST /api/v1/server/auth/password/forgot` or the server-rendered `GET`/`POST /server/auth/password/forgot` form. With SMTP configured, the service emails a one-hour, single-use link. Complete the reset with `POST /api/v1/server/auth/password/reset` or use the server-rendered form at `/server/auth/password/reset`; completing a reset changes the stored password and revokes the user's existing sessions.
 
 ## Authentication and scope
 
