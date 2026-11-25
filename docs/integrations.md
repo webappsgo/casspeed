@@ -15,7 +15,11 @@ The speed test runs against the CasSpeed server itself. No external test network
 
 ### MCP clients
 
-MCP clients connect to any MCP endpoint above using the same API bearer token as REST. Requests use JSON-RPC 2.0 over HTTP `POST` and protocol revision `2026-07-28`; include `MCP-Protocol-Version`, `Mcp-Method`, and the matching protocol version in `_meta`. The server currently exposes API operations from the OpenAPI document through `tools/list` and `tools/call`. Browser-origin requests must be same-origin. Do not send browser session cookies or put tokens in URLs.
+MCP clients connect to any MCP endpoint above using the same API bearer token as REST. Requests use JSON-RPC 2.0 over HTTP `POST` and protocol revision `2026-07-28`; include `MCP-Protocol-Version`, `Mcp-Method`, and the matching protocol version in `_meta`. The server currently exposes API operations from the OpenAPI document through `tools/list` and `tools/call`. Browser-origin requests must be same-origin or match an explicitly configured CORS origin; the wildcard CORS default does not authorize MCP cross-origin requests. Do not send browser session cookies or put tokens in URLs.
+
+### GraphQL clients
+
+GraphQL is read-only. Send a query with `GET` query parameters or a JSON `POST` body to `/api/v1/server/graphql`; `/api/graphql` is an alias. Queries can read public health, the authenticated user's own test history, an owned result, or a publicly shared result. Supply `Authorization: Bearer <user-token>` for private account data; API session cookies do not identify a user. The endpoint never provides mutations.
 
 ## Deployment integrations
 

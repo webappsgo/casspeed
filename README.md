@@ -33,6 +33,10 @@ The server creates its configuration in the OS-specific configuration directory 
 
 The versioned API is rooted at `/api/v1`. Speed-test routes include `POST /speed-tests`, `GET /speed-tests/{id}`, and the test transfer endpoints. Unshared results require the originating session or owning account. See the [API reference](https://casapps-casspeed.readthedocs.io/en/latest/api/) for request and response details.
 
+MCP clients can use `/api/v1/server/mcp` (also `/api/mcp` and `/mcp`) with the same bearer API token. The endpoint uses Streamable HTTP and exposes OpenAPI operations as tools; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/#mcp-clients).
+
+Read-only GraphQL is available at `/api/v1/server/graphql` (alias `/api/graphql`), with the local GraphiQL explorer at `/server/docs/graphql`. It serves public health, the caller's owned results, and explicitly shared results; it has no mutations.
+
 ## Other
 
 Public service pages are available under `/server/`, including `/server/about`, `/server/privacy`, `/server/terms`, `/server/help`, and `/server/healthz`. Swagger UI is at `/server/docs/swagger`; the OpenAPI document is at `/api/v1/server/swagger`.

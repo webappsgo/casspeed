@@ -1,36 +1,44 @@
 # HTTP API
 
-The canonical versioned API base is `/api/v1`. Requests accept JSON where an endpoint takes a structured body; errors use HTTP status codes and must not expose internal paths or secrets. Authentication uses a session cookie for browser flows and a bearer token for automation.
+CasSpeed's canonical REST base is `/api/v1`. The running server publishes its OpenAPI contract at `/api/v1/server/swagger`; Swagger UI is available at `/server/docs/swagger`. JSON responses use an `ok` field and structured data or errors. Error bodies must not expose filesystem paths, credentials, or private user data.
 
-## Speed tests
+## Speed tests and sharing
 
 | Method | Route | Purpose |
 |---|---|---|
-| `POST` | `/api/v1/speed-tests` | Start a test and return its identifier/state |
-| `GET` | `/api/v1/speed-tests/{id}/status` | Receive live progress for the originating test |
-| `GET` | `/api/v1/speed-tests/{id}/download` | Download measurement data for that test |
+| `POST` | `/api/v1/speed-tests` | Start an anonymous or authenticated test |
+| `GET` | `/api/v1/speed-tests/{id}/status` | Connect to the test's WebSocket progress/result channel |
+| `GET` | `/api/v1/speed-tests/{id}/download` | Download bounded measurement data |
 | `POST` | `/api/v1/speed-tests/{id}/uploads` | Submit bounded upload measurement data |
-| `GET` | `/api/v1/speed-tests/{id}` | Read a result if the caller owns it or it is shared |
+| `GET` | `/api/v1/speed-tests/{id}` | Read an owned private result |
 | `GET` | `/api/v1/speed-tests` | List the authenticated user's history |
-| `POST` | `/api/v1/speed-tests/{id}/shares` | Explicitly create a share link for an owned result |
+| `POST` | `/api/v1/speed-tests/{id}/shares` | Explicitly create a public share link |
 | `GET` | `/api/v1/shares/{code}` | Read a shared result |
-| `GET` | `/api/v1/shares/{code}/images/png` | Export the shared result as PNG |
-| `GET` | `/api/v1/shares/{code}/images/svg` | Export the shared result as SVG |
+| `GET` | `/api/v1/shares/{code}/images/png` | Export a shared result as PNG |
+| `GET` | `/api/v1/shares/{code}/images/svg` | Export a shared result as SVG |
 
-An unshared result is private to the originating anonymous session or the owning account. A share link is public and should be treated as a public URL. Never put user IDs in a history query to select another user's data; ownership is determined by the authenticated caller.
+An unshared result is visible only to its owning account or the anonymous browser session that started it. A share link makes the result public. Shared responses omit the plain client IP and user agent. Treat the share URL as public.
 
-## User and server endpoints
+## Users and server pages
 
-Account registration and login, profile, device, token, and server administration endpoints are documented by the live OpenAPI document at `/api/v1/server/swagger`. Swagger UI is available at `/server/docs/swagger`. The health endpoint is `/api/v1/server/healthz`; `/api/healthz` is a direct alias.
+Registration, login, profile, device, token, and server administration operations are listed in the live OpenAPI document. Public server pages also have JSON representations under `/api/v1/server/`, including the health, security, help, privacy, and about pages. Contact form submissions are two-step: submit the form and captcha to receive a review, then confirm it with the returned review token.
 
-## Authentication
+Password reset requests use `POST /api/v1/server/auth/password/forgot`. With SMTP configured, the service emails a one-hour, single-use link. Complete the reset with `POST /api/v1/server/auth/password/reset` or use the server-rendered form at `/server/auth/password/reset`; completing a reset changes the stored password and revokes the user's existing sessions.
 
-Send `Authorization: Bearer <token>` for supported automation requests. Keep tokens secret, use the least necessary account, and revoke a token if it is exposed. Browser sign-in uses a session and CSRF protection. Failed authentication should not disclose whether an account exists.
+## Authentication and scope
+
+Public API routes work without a token. Send `Authorization: Bearer <token>` for private account data, server administration, and MCP. API session cookies do not identify a user; the anonymous owner cookie is used only to authorize that browser's own speed-test result. Invalid bearer credentials return `401`; a valid token without the required scope or ownership returns `403`.
+
+Tokens use the `adm_` administrator or `usr_` user prefix and a cryptographically random 32-character base62 suffix. Tokens are shown once and stored as SHA-256 hashes. Their scopes are `global`, `read-write`, or `read`; agent scope is restricted to agent routes. The operator token is generated into the private `secrets.yml` file and printed once on first creation. Setup also returns one administrator API token once; it authenticates to admin API routes and is stored as a SHA-256 hash.
+
+## GraphQL
+
+The read-only GraphQL endpoint is `/api/v1/server/graphql`, with `/api/graphql` as an alias. It exposes public health data, a user's own history and results, and public fields from shared results. Send a user bearer token for API access; browser sessions identify the user only on web pages. The schema has no mutations. GraphiQL is available at `/server/docs/graphql`.
 
 ## MCP
 
-The Streamable HTTP MCP endpoint is `/api/v1/server/mcp`, with direct aliases `/api/mcp` and `/mcp`. It uses the same bearer API token and exposes the operations described by OpenAPI as `tools/list` and `tools/call`. MCP requests use JSON-RPC 2.0 over `POST` with protocol revision `2026-07-28` and the required `MCP-Protocol-Version`, `Mcp-Method`, and `_meta` fields. The endpoint has no session state.
+The Streamable HTTP MCP endpoint is `/api/v1/server/mcp`, with direct aliases `/api/mcp` and `/mcp`. It uses the same bearer token, ownership checks, and scopes as REST. MCP requests use JSON-RPC 2.0 over `POST` with protocol revision `2026-07-28`, matching `MCP-Protocol-Version`, `Mcp-Method`, and `_meta` values. Browser origins must match the request origin or an explicit configured CORS origin; wildcard CORS does not authorize cross-origin MCP requests.
 
 ## Representations
 
-The server API uses JSON by default. Health endpoints also support plain text through content negotiation and the `.txt` suffix. The live server's OpenAPI document is the machine-readable reference for current request and response fields.
+The API uses JSON. Health endpoints also support plain text through content negotiation and `.txt` suffixes. Image exports return `image/png` or `image/svg+xml`.

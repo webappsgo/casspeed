@@ -47,10 +47,24 @@ server:
     driver: file
   ssl:
     enabled: false
+  trusted_proxies:
+    additional: []
+    client_ip_header: auto
+  pages:
+    contact:
+      enabled: true
+      captcha: simple
+      captcha_site_key: ""
+      captcha_secret_key: ""
+  security:
+    reports:
+      retention_days: 365
 web:
   ui:
     theme: dark
   cors: "*"
+  security:
+    publish_pgp_key: false
 test:
   max_concurrent: 3
   min_interval: 5
@@ -63,6 +77,12 @@ test:
 
 `server.ssl` also accepts certificate/key paths, minimum TLS version, and Let's Encrypt settings. The scheduler accepts named tasks and their schedules. Defaults are defined in the binary and may differ from an older installation's file. The application currently uses SQLite storage; other database driver values are not a guarantee of a supported backend.
 
+Only trust reverse proxies that you operate. The `additional` list accepts trusted proxy addresses and CIDR ranges; proxy-provided client addresses are ignored for untrusted peers. Contact CAPTCHA supports `simple`, `recaptcha`, and `hcaptcha`; provider credentials are never returned by the form descriptor. The simple challenge works without JavaScript and without contacting a third party.
+
 ## Modes and secrets
 
-Use `--mode production` for a deployed service. `--debug` enables diagnostics and does not bypass authentication. Backup encryption keys are supplied through `CASSPEED_BACKUP_KEY`; protect them as secrets. The admin path is intentionally not advertised on public pages.
+Use `--mode production` for a deployed service. `--debug` enables diagnostics and does not bypass authentication. The administration path is configurable and should not be advertised on public pages.
+
+The server creates `{config_dir}/secrets.yml` with mode `0600`. It stores the generated `server.token` operator credential and the security-report encryption key. The operator token uses the `adm_` prefix and is printed once when first generated; save it securely. The file is the durable copy, and subsequent starts do not print the token again. Never commit this file or paste its values into logs, documentation, or issue reports.
+
+The public PGP endpoint is disabled by default. Configure `web.security.publish_pgp_key` to publish the active public key; the matching private key remains encrypted in the configuration directory. Security report retention is controlled by `server.security.reports.retention_days`.

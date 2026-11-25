@@ -16,7 +16,7 @@ CasSpeed is a self-hosted internet speed testing service for measuring download 
 
 ## Browser pages
 
-The public browser pages live below `/server/`: about, privacy, contact, help, terms, DPO, security, and health. Interactive API documentation is available at `/server/docs/swagger`; the OpenAPI document is `/api/v1/server/swagger`.
+The public browser pages live below `/server/`: about, privacy, help, terms, DPO, security, and health. Interactive API tools are available at `/server/docs/swagger` (REST) and `/server/docs/graphql` (read-only GraphQL). Their machine-readable contracts are `/api/v1/server/swagger` and `/api/v1/server/graphql`.
 
 ## Privacy model
 

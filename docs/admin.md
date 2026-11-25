@@ -4,13 +4,13 @@ The admin interface is isolated from public navigation. Its default root is `/se
 
 ## Initial setup and authentication
 
-Use the setup flow at `/server/{admin_path}/setup` only while the server is uninitialized. Create a unique administrator credential and store it securely. Admin authentication and sessions are separate from regular user sessions. A regular user must not gain access to administration routes. Debug mode does not bypass authentication.
+Use the setup flow at `/server/{admin_path}/setup` only while the server is uninitialized. The first-start setup token is displayed once; its SHA-256 hash is retained in the private config directory until setup completes. Setup creates an administrator API token in the `adm_` format and returns the plaintext once. Store that token securely. Admin authentication and sessions are separate from regular user sessions. A regular user must not gain access to administration routes. Debug mode does not bypass authentication.
 
-The administrator dashboard is at `/server/{admin_path}/`. Server management routes use direct section names such as `/settings`, `/ssl`, `/email`, `/scheduler`, `/logs`, `/backup`, `/updates`, `/info`, `/metrics`, `/network/tor`, `/network/geoip`, `/security/auth`, `/security/tokens`, and `/users`. Do not place server settings beneath a `/config/` segment or beneath an administrator's personal profile path.
+The administrator dashboard is at `/server/{admin_path}/`. Server management routes use direct section names such as `/settings`, `/ssl`, `/email`, `/scheduler`, `/logs`, `/backup`, `/updates`, `/info`, `/metrics`, `/network/tor`, `/network/geoip`, `/security/auth`, `/security/tokens`, and `/users`. The settings form updates listener mode and port plus test concurrency, thread, and duration limits in `server.yml`; restart the server for listener and test-engine changes to take effect. Do not place server settings beneath a `/config/` segment or beneath an administrator's personal profile path.
 
 ## Administration API
 
-Admin API routes are rooted at `/api/v1/server/{admin_path}/` and require admin authorization. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes require CSRF protection and should work without JavaScript.
+Admin API routes are rooted at `/api/v1/server/{admin_path}/` and require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes use the admin session and require CSRF protection; they should work without JavaScript.
 
 ## Operational guidance
 
