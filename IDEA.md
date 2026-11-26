@@ -38,7 +38,7 @@ api_version: v1
 ### Data model & sensitivity
 
 - **Speed test:** identifier, optional user and device association, timestamp, download/upload Mbps, ping/jitter milliseconds, packet loss, hashed client IP, user agent, server identifier, optional share code, and share-view count. Results may be anonymous or associated with an account. Unshared results are visible only to the originating anonymous session or owning account; shared results expose only fields allowed by the owner's preference.
-- **User:** identifier, username, email address, and whether the username may appear on shared results. Account email and profile data are private.
+- **User:** identifier, username, email address, public-profile visibility, and whether the username may appear on shared results. Account email and non-public profile fields are private. Public profile fields follow the profile visibility controls required by AI.md PART 34; the PART 34 default is public, and a user may make their profile private.
 - **Device:** identifier, owning user, user-defined name, and last-seen time. Device records are private to their owner.
 - **API token:** identifier, owning user, name, hashed user token, and last-used time. The raw token is a secret and is never stored or shown again after creation. Tokens follow the format required by AI.md PART 11.
 - **Share:** an eight-character base62 code associated with a result; valid only while the result exists. A share may expose only the result fields permitted by the owner's sharing preference.
