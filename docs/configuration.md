@@ -21,6 +21,8 @@ Command-line path flags take precedence over their matching environment variable
 
 `DATABASE_DIR` selects the database directory. `NO_COLOR` disables colored terminal output. The default listener is `[::]`; the port is chosen from the 64xxx range. The Docker entrypoint supplies its container listener address and port. `server.mode` is `production` or `development`; debug mode does not bypass authentication.
 
+In the Docker image, `CONFIG_DIR` defaults to `/config/casspeed` and `DATA_DIR` to `/data/casspeed`. The entrypoint defaults `LISTEN` to `[::]` and `PORT` to `80`, enables `--debug` when `DEBUG` is `true`, `yes`, `1`, `on`, or `enable` (case-insensitive), and forwards additional arguments to the server process.
+
 ## Environment variables
 
 | Variable | When it applies | Description |

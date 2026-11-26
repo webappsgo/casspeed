@@ -90,7 +90,7 @@ Administrator bearer tokens can manage reusable user-registration codes at `/api
 
 The raw invite code is returned only at creation; storage retains its SHA-256 hash. A maximum of `0` means unlimited uses. Public invite acceptance is available at `/api/v1/server/auth/invite/user/{token}` and the matching browser flow is `/server/auth/invite/user/{token}`. The live OpenAPI document specifies request and response fields.
 
-Public server pages have JSON representations under `/api/v1/server/`, including health, help, privacy, DPO, security policy, security acknowledgments, and about information. Contact form submissions use a two-step review and confirmation flow; the API descriptor exposes active form fields and captcha requirements without returning provider secrets.
+Public server pages have JSON representations under `/api/v1/server/`, including health, help, privacy, DPO, security policy, security acknowledgments, and about information. On Tor requests, privacy responses keep third-party service names and disclosures but omit external policy URLs; consent links stay on the onion service. Contact form submissions use a two-step review and confirmation flow; the API descriptor exposes active form fields, stable option values, localized option labels, and captcha requirements without returning provider secrets.
 
 Administrators configure analytics at `/server/{admin_path}/tracking` and `GET`/`PATCH /api/v1/server/{admin_path}/tracking`. Provider scripts are emitted only after analytics consent. Privacy configuration is available through `GET`/`PATCH /api/v1/server/{admin_path}/pages/privacy`.
 
@@ -144,7 +144,7 @@ Metrics are available when `server.metrics.enabled` is true at `/api/{api_versio
 
 ## Autodiscovery
 
-`GET /api/autodiscover` is unversioned so clients can discover the server's current API version before choosing a versioned route. It returns the standard JSON envelope with `ok: true` and a `data` object containing `name`, `version`, `api.current_version`, `urls`, `onion`, `i2p`, `cli_versions`, `cli_min_version`, `agent_versions`, and `agent_min_version`. `urls` contains deduplicated public origins; overlay addresses are exposed in their own fields only when configured. Each available CLI or agent version entry includes its version and SHA-256. The response does not publish admin paths, secrets, settings, or a configuration schema.
+`GET /api/autodiscover` is unversioned so clients can discover the server's current API version before choosing a versioned route. It returns the standard JSON envelope with `ok: true` and a `data` object containing `name`, `version`, `api.current_version`, `urls`, `onion`, `i2p`, `cli_versions`, `cli_min_version`, `agent_versions`, and `agent_min_version`. `urls` contains deduplicated public origins on clearnet requests; a Tor request receives only its current onion origin. Overlay addresses are exposed in their own fields only when configured. Each available CLI or agent version entry includes its version and SHA-256. The response does not publish admin paths, secrets, settings, or a configuration schema.
 
 ## Representations
 
