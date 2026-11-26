@@ -83,6 +83,49 @@ server:
   security:
     reports:
       retention_days: 365
+  privacy:
+    data:
+      sold: false
+      stored_on_server: true
+      sharing:
+        - condition: analytics
+          when: Tracking is configured and the visitor consents
+          data: Anonymized usage information
+        - condition: email
+          when: SMTP is configured
+          data: Email address and message content
+    retention:
+      period: Account data remains while the account is active.
+      export_available: true
+      deletion_available: true
+    consent:
+      show_until_acknowledged: true
+      message: We use essential cookies and, with consent, preference and analytics cookies. We never sell data.
+      message_if_sold: Data may be shared or sold as described in the privacy policy.
+      policy:
+        text: Privacy Policy
+        url: /server/privacy
+        version: "1"
+      buttons:
+        decline: Decline
+        accept: I Agree
+      position: bottom
+      show_preferences: true
+      preferences_text: Manage Preferences
+    cookies:
+      essential:
+        enabled: true
+        description: Required for authentication and site security.
+      preferences:
+        enabled: true
+        description: Remembers theme, language, and interface preferences.
+      analytics:
+        enabled: true
+        description: Helps us understand how visitors use the site.
+        description_suffix_not_sold: Analytics data is anonymized and never sold.
+        description_suffix_sold: Analytics data may be shared with third parties.
+    third_party:
+      services: []
 web:
   ui:
     theme: dark
@@ -106,6 +149,8 @@ User configuration belongs under `server.users`. Registration mode is `open` or 
 SMTP settings may be supplied in `server.notifications.email.smtp` and `server.notifications.email.from`, or through `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, and `SMTP_FROM_EMAIL`. With no SMTP server, notification records remain available in the application but email delivery is skipped.
 
 Other `server` settings include contact recipients and webhooks, DPO details, contact-form CAPTCHA and abuse controls, SSL certificates and Let's Encrypt, scheduler tasks and timezone, rate limits, branding, and SEO. `web.security.publish_pgp_key` controls public PGP-key publication. Do not put secrets in public documentation or expose them through public configuration APIs.
+
+The `/server/privacy` page and `/api/v1/server/privacy` response use `server.privacy` to show sale status, sharing, cookie descriptions, retention, and third-party services. The CCPA controls appear only when `server.privacy.data.sold` is true. Administrators can edit these settings at `/server/{admin_path}/privacy`; the authenticated API mirror is `/api/v1/server/{admin_path}/pages/privacy` (`GET` and `PATCH`). Operators may extend the built-in policy with `server.branding.content.privacy`; the built-in collection, usage, and security sections remain application content.
 
 ## Secrets and operations
 
