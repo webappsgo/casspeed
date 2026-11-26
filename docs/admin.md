@@ -12,6 +12,8 @@ The administrator dashboard is at `/server/{admin_path}/`. Server management rou
 
 When multi-user accounts are enabled, `/server/{admin_path}/users` supports user search, paginated listing, direct account creation, and issuance of a one-use password-setup link. With SMTP available, direct creation emails the link; otherwise the administrator can copy it for delivery. The user chooses their password. `/server/{admin_path}/moderation/users` provides account status actions, session revocation, and confirmed deletion. Moderation views show masked email addresses and do not expose private account data or authentication secrets. Suspending a user revokes their active sessions.
 
+Reusable registration codes are managed at `/server/{admin_path}/users/invites`; creation selects a regular-user role, expiry, and maximum uses (`0` means unlimited). The raw code is shown only when created. Administrators can list and revoke codes. The matching API routes are under `/api/v1/server/{admin_path}/users/invites` and require an administrator bearer token.
+
 Public self-registration follows `server.users.registration.mode`: `open` permits the registration form, and `private` returns 404 for it. Administrator-issued setup links remain available in both modes. User account sessions and `usr_` tokens remain separate from administrator sessions and `adm_` tokens.
 
 ## Administration API

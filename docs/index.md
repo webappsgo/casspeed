@@ -16,8 +16,8 @@ CasSpeed is a self-hosted internet speed testing service for measuring download 
 
 ## Browser pages
 
-The public browser pages live below `/server/`: about, privacy, help, terms, DPO, security, and health. Interactive API tools are available at `/server/docs/swagger` (REST) and `/server/docs/graphql` (read-only GraphQL). Their machine-readable contracts are `/api/v1/server/swagger` and `/api/v1/server/graphql`.
+The public browser pages live below `/server/`: about, privacy, help, terms, DPO, security, contact, preferences, and health. Account pages include profile, test history, devices, settings, notifications, API tokens, and security controls. The admin panel lives below `/server/{admin_path}/`. Interactive API tools are available at `/server/docs/swagger` (REST) and `/server/docs/graphql` (read-only GraphQL). Their machine-readable contracts are `/api/v1/server/swagger` and `/api/v1/server/graphql`.
 
 ## Privacy model
 
-An unshared result is visible only to the originating anonymous session or owning account. A result is public only after its owner explicitly creates a share link. Anonymous results expire according to the configured retention period; authenticated history has no automatic expiry. Account deletion and individual result deletion are not currently exposed through the account UI or API.
+An unshared result is visible only to the originating anonymous session or owning account. A result is public only after its owner explicitly creates a share link. Anonymous results expire according to the configured retention period; authenticated history remains available to its owner. Account owners can manage their profile, devices, tokens, sessions, and two-factor authentication from the browser pages.
