@@ -8,8 +8,9 @@ casspeed-cli --server https://speed.example.org test
 casspeed-cli --server https://speed.example.org --output json test
 casspeed-cli --server https://speed.example.org health
 casspeed-cli --server https://speed.example.org --token-file ./token history
+casspeed-cli --server https://speed.example.org login YOUR_TOKEN
 ```
 
-Commands are `test`, `health`, `history`, `share TEST_ID`, and `login`. The `login` command saves a supplied token to the per-user configuration directory with mode `0600`; token files with group or world permissions are rejected. Tokens can also be provided with `--token`, `--token-file`, or `CASSPEED_TOKEN`.
+Commands are `test`, `health`, `history`, `share TEST_ID`, and `login [TOKEN]`. The `login` command saves a supplied token to the per-user configuration directory with mode `0600`; token files with group or world permissions are rejected. Token lookup order is `--token`, `--token-file`, `CASSPEED_TOKEN`, then the saved per-user token. Supported interface languages are `en`, `es`, `fr`, `de`, `it`, and `ar`; select one with `--lang CODE`.
 
 Unshared speed-test results remain private to the originating anonymous session or owning account. `share TEST_ID` explicitly creates a public share for an authenticated result. See the [API guide](api.md) for ownership and sharing behavior.
