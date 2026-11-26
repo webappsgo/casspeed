@@ -17,8 +17,31 @@ Command-line path flags take precedence over their matching environment variable
 | `--address` | `LISTEN` |
 | `--port` | `PORT` |
 | `--mode` | `MODE` |
+| `--i2p` | `I2P_ENABLED` |
 
 `DATABASE_DIR` selects the database directory. `NO_COLOR` disables colored terminal output. The default listener is `[::]`; the port is chosen from the 64xxx range. The Docker entrypoint supplies its container listener address and port. `server.mode` is `production` or `development`; debug mode does not bypass authentication.
+
+## Environment variables
+
+| Variable | When it applies | Description |
+|---|---|---|
+| `CONFIG_DIR`, `DATA_DIR`, `CACHE_DIR`, `LOG_DIR`, `BACKUP_DIR`, `PID_FILE` | Every startup | Override the matching directory or PID file path; the matching CLI flag takes precedence |
+| `DATABASE_DIR` | Every startup | SQLite database directory |
+| `PORT`, `LISTEN`, `MODE` | Every startup | Listener port, listener address, and runtime mode; CLI flags take precedence |
+| `DEBUG` | Every startup | Explicitly enables debug diagnostics when set to a truthy value; `--debug` takes precedence |
+| `DOMAIN` | Every startup | Comma-separated public hostnames for URL and origin resolution |
+| `I2P_ENABLED` | Every startup | Enable or disable the I2P eepsite; default is enabled in containers and disabled elsewhere |
+| `NO_COLOR`, `TERM` | Every startup | Control terminal color output; `TERM=dumb` disables ANSI output |
+| `LC_ALL`, `LANG` | CLI | Select the CLI output language when `--lang` is not provided |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL` | Every startup | Configure email delivery; secrets should be supplied through the deployment's secret mechanism |
+| `APPLICATION_NAME`, `APPLICATION_TAGLINE` | First run | Seed initial branding values; later changes belong in configuration or the admin interface |
+| `DATABASE_DRIVER`, `DATABASE_URL`, `CACHE_URL` | First run | Seed the database and cache connection settings; saved values take precedence on later starts |
+| `CASSPEED_BACKUP_KEY` | Backup and restore commands | 64-character hexadecimal encryption key; keep it separate from backup files |
+| `CASSPEED_TOKEN` | CLI | Fallback API token after `--token` and `--token-file`, before the saved user token |
+
+`HOSTNAME` is a fallback input when resolving the server's public hostname. The service also uses operating-system variables such as `ProgramData` and `AppData` when selecting Windows paths.
+
+The initial `--config`, `--data`, `--cache`, `--log`, and `--backup` paths use OS-specific defaults. Settings are merged from `server.yml`, ordered files under `yaml.d/`, and `secrets.yml`; the generated secrets file is private and credential-bearing connection strings are not meant to be copied into public configuration examples.
 
 ## YAML settings
 
@@ -157,6 +180,27 @@ test:
   chunk_size: 1048576
   timeout: 60
 ```
+
+## Configuration sections
+
+The YAML example above highlights commonly configured values; it is not the full schema. Configuration is merged from built-in defaults, `server.yml`, `yaml.d/*.yml` in filename order, and then `secrets.yml`. The main key groups are:
+
+| Keys | Purpose |
+|---|---|
+| `server.address`, `server.port`, `server.fqdn`, `server.api_version`, `server.baseurl`, `server.mode`, `server.pidfile`, `server.daemonize` | This node's listener and runtime identity |
+| `server.database`, `server.cache`, `server.ssl`, `server.trusted_proxies`, `server.cluster` | Storage, cache, TLS, proxy trust, and cluster settings |
+| `server.branding`, `server.seo`, `web.ui` | Site title, content, metadata, and theme |
+| `web.*`, `server.cors`, `server.csrf`, `server.url_detection`, `server.compression`, `server.healthz`, `server.i18n` | Web behavior, browser security, URL handling, health aliases, and languages |
+| `server.pages`, `server.contact` | Public page content, contact form fields, CAPTCHA, and abuse controls |
+| `server.privacy`, `server.compliance`, `server.tracking` | Privacy disclosures, consent, compliance, and consent-gated analytics |
+| `server.security`, `server.rate_limit`, `server.geoip`, `server.limits`, `server.tokens`, `data.*` | Security controls, abuse limits, GeoIP, and token policy |
+| `server.logs`, `server.metrics`, `server.notifications` | Logging, telemetry, and notification delivery |
+| `server.tor`, `server.i2p` | Optional overlay network listeners and service settings |
+| `server.maintenance`, `server.scheduler`, `server.update`, `server.auto_update`, `server.backup`, `server.restore`, `cli` | Scheduled work, maintenance, updates, backups, restore, and CLI defaults |
+| `server.auth`, `server.users`, `server.orgs`, `server.session`, `server.admin`, `server.admin_path` | Authentication, regular users, sessions, and administration |
+| `test.*` | Speed-test duration, concurrency, data chunk size, and retention |
+
+The server writes node-specific values to `server.yml`, area settings to `yaml.d/`, and credentials to `secrets.yml`. Environment variables for database and cache connection URLs seed configuration on first run; later starts use the saved values. Do not put credentials into `server.yml` when the application can keep them in `secrets.yml`.
 
 User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. `roles.available` is the allowlist for account and invite roles; `roles.default` applies to new self-registrations. The permissions map associates configured role names with their regular-user permissions and never grants Server Admin access. The `auth` section controls password complexity and whether users may enable two-factor authentication. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
 

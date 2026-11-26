@@ -18,7 +18,7 @@ Keep the configuration, data, and log directories private. `secrets.yml` is crea
 
 ## Coordinated disclosure
 
-Use `/server/security` for the current reporting instructions and `/server/security/policy` for the disclosure policy. Security reports are encrypted at rest and their public status page exposes only the tracking identifier, status, researcher comment, and disclosure date. When PGP publication is enabled, the public key is served at `/.well-known/pgp-key.asc`. The operator can review reports and rotate the project key in the authenticated administration area.
+Use `/.well-known/security.txt` for the configured reporting channels and `/server/security` for the human-readable instructions. The security page links to `/server/security/policy` and the report form at `/server/contact?security_id={id}`; the identifier comes from the current security contact information. Reports submitted through this security-specific form are encrypted at rest. Keep the private status token from the confirmation page; `/server/security/report/{tracking_id}` requires that token and exposes only the tracking identifier, status, researcher comment, and disclosure date. When PGP publication is enabled, the public key is served at `/.well-known/pgp-key.asc`. The operator can review reports and rotate the project key in the authenticated administration area.
 
 Please include the affected component, endpoint, severity, impact, and steps to reproduce. Do not access, modify, or retain other users' data. The service sends an acknowledgment only when configured and does not include report text in that message.
 
@@ -26,6 +26,8 @@ Please include the affected component, endpoint, severity, impact, and steps to 
 
 - `/.well-known/security.txt` publishes the service's configured security contact and policy.
 - `/.well-known/pgp-key.asc` is available only when public-key publication is enabled.
+- `/.well-known/change-password` redirects signed-in users to password management and guests to password recovery.
+- `/server/healthz` and `/api/v1/server/healthz` report component health without returning secrets or filesystem paths; JSON, text, and HTML representations are available according to the request path and content negotiation.
 - `/server/security`, `/server/security/policy`, and `/server/security/thanks` provide the public security pages.
 - `/server/security/report/{tracking_id}` requires the report's private status token.
 
