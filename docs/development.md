@@ -7,9 +7,11 @@ CasSpeed is a Go project. Docker, Make, and Git are required; the supported Go t
 ```sh
 make build       # server and CLI for supported platforms
 make test        # go vet, package tests, and aggregate coverage gate
-make docker      # multi-architecture image build; does not push or load it locally
+make docker      # multi-architecture build plus local AMD64 image and runtime contract check
 make dev         # local platform binaries in a project-scoped temp directory
 ```
+
+`make docker` builds the AMD64 and ARM64 variants, then loads the AMD64 image locally as `ghcr.io/casapps/casspeed:latest` and checks the required runtime binaries and server health/Tor status. It does not push an image. Set `REQUIRE_OVERLAY=1` when outbound Tor access is required and a networkless skip is unacceptable.
 
 Use the repository's test/lint wrapper for direct test and lint commands. Run formatting in the project toolchain container. Do not run Go builds or binaries directly on the host.
 
