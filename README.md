@@ -40,12 +40,12 @@ The repository also provides `docker/docker-compose.yml`. Review its environment
 
 Download the matching `casspeed-{os}-{arch}` release asset and run it in the foreground under your service supervisor. Windows binaries use the `.exe` suffix.
 
-| Platform | Architectures |
-|---|---|
-| Linux | `amd64`, `arm64` |
-| macOS | `amd64` (Intel), `arm64` (Apple Silicon) |
-| Windows | `amd64`, `arm64` |
-| FreeBSD | `amd64`, `arm64` |
+| Platform | Architectures | Server asset | CLI asset |
+|---|---|---|---|
+| Linux | `amd64`, `arm64` | `casspeed-linux-{arch}` | `casspeed-cli-linux-{arch}` |
+| macOS | `amd64` (Intel), `arm64` (Apple Silicon) | `casspeed-darwin-{arch}` | `casspeed-cli-darwin-{arch}` |
+| Windows | `amd64`, `arm64` | `casspeed-windows-{arch}.exe` | `casspeed-cli-windows-{arch}.exe` |
+| FreeBSD | `amd64`, `arm64` | `casspeed-freebsd-{arch}` | `casspeed-cli-freebsd-{arch}` |
 
 For example, install the Linux `amd64` server binary:
 
@@ -55,7 +55,7 @@ chmod +x casspeed
 sudo install -m 0755 casspeed /usr/local/bin/casspeed
 ```
 
-macOS may require removing the quarantine attribute after downloading: `xattr -d com.apple.quarantine /usr/local/bin/casspeed`. Select the architecture-specific asset that matches the host.
+On macOS, remove the quarantine attribute after installing: `xattr -d com.apple.quarantine /usr/local/bin/casspeed`. On Windows, download the matching `.exe` and add its directory to `PATH`. On Linux, macOS, and FreeBSD, select the architecture-specific asset, make it executable, and install it in a directory on `PATH`.
 
 ### Docker Compose
 
@@ -102,6 +102,8 @@ Unshared results require their originating anonymous browser session or owning a
 ## Other
 
 Public information and help pages are served below `/server/`. The browser interface includes account, device, token, test-history, and administration pages. Read-only GraphQL is available at `/api/v1/server/graphql`, with a browser explorer at `/server/docs/graphql`. MCP clients can connect to `/api/v1/server/mcp` using a scoped bearer token; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/).
+
+See the [translation guide](https://casapps-casspeed.readthedocs.io/en/latest/translating/) to contribute interface translations.
 
 ## Development
 
