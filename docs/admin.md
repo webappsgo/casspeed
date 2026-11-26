@@ -8,9 +8,15 @@ Use the setup flow at `/server/{admin_path}/setup` only while the server is unin
 
 The administrator dashboard is at `/server/{admin_path}/`. Server management routes use direct section names such as `/settings`, `/ssl`, `/email`, `/scheduler`, `/logs`, `/backup`, `/updates`, `/info`, `/metrics`, `/network/tor`, `/network/geoip`, `/security/auth`, `/security/tokens`, and `/users`. The settings form updates listener mode and port plus test concurrency, thread, and duration limits in `server.yml`; restart the server for listener and test-engine changes to take effect. Do not place server settings beneath a `/config/` segment or beneath an administrator's personal profile path.
 
+## Regular-user account management
+
+When multi-user accounts are enabled, `/server/{admin_path}/users` supports user search, paginated listing, direct account creation, and issuance of a one-use password-setup link. With SMTP available, direct creation emails the link; otherwise the administrator can copy it for delivery. The user chooses their password. `/server/{admin_path}/moderation/users` provides account status actions, session revocation, and confirmed deletion. Moderation views show masked email addresses and do not expose private account data or authentication secrets. Suspending a user revokes their active sessions.
+
+Public self-registration follows `server.users.registration.mode`: `open` permits the registration form, and `private` returns 404 for it. Administrator-issued setup links remain available in both modes. User account sessions and `usr_` tokens remain separate from administrator sessions and `adm_` tokens.
+
 ## Administration API
 
-The implemented Admin API currently exposes `GET` and `PUT /api/v1/server/{admin_path}/settings`; both require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes use the admin session and require CSRF protection; they should work without JavaScript. Other admin sections are informational pages and do not currently provide editing controls.
+The Admin API exposes machine-readable server settings and user-moderation routes under `/api/v1/server/{admin_path}/`; requests require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/v1/server/swagger`. Browser form routes use the admin session and require CSRF protection; they work without JavaScript. Several operational sections are currently read-only status pages; controls are available only where the page or API documents them.
 
 ## Operational guidance
 

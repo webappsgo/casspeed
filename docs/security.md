@@ -6,6 +6,12 @@ Unshared speed-test results are private to the account that owns them or the ano
 
 Use HTTPS for deployments exposed to untrusted networks. Forwarded headers are trusted only from configured proxy peers. The server stores a one-way client IP hash rather than a plain IP address. API tokens are bearer credentials: user tokens are shown once, stored as SHA-256 hashes, and can be scoped and expired. The operator token is stored in `secrets.yml`, printed only when first generated, and compared without storing it in the database.
 
+## Account security
+
+User and administrator accounts are separate. User passwords are never returned by the API. Login may require email verification and, when configured, a second factor. Users can configure authenticator-based two-factor authentication and manage passkeys under `/users/security`; recovery codes are displayed only when created or regenerated and are single-use. Passkey registration requires a secure origin and a password recheck, and a new passkey remains inactive until recovery-code setup is confirmed.
+
+User tokens use the `usr_` prefix and administrator tokens use `adm_`. Token values are shown once; API listings contain metadata only. Administrators cannot view full user email addresses, passwords, recovery codes, or two-factor secrets. Account suspension revokes active user sessions. Private registration mode disables public registration while preserving admin-issued account setup links.
+
 ## Secrets and logs
 
 Keep the configuration, data, and log directories private. `secrets.yml` is created with mode `0600`; it stores the operator token, security-report encryption key, and other generated secrets. Never include tokens, passwords, private keys, or report contents in logs or support requests. Security event logs contain only the metadata needed to investigate an event.

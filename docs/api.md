@@ -34,6 +34,12 @@ The browser registration route is `/server/auth/register`; public registration i
 | `PATCH` | `/api/v1/users` | Update the current user's profile |
 | `GET` | `/api/v1/users/settings` | Read the current user's settings |
 | `GET` | `/api/v1/users/security` | Read the current user's security summary |
+| `PATCH` | `/api/v1/users/email` | Request an account email change |
+| `GET` / `POST` | `/api/v1/users/security/2fa` | Read or configure authenticator-based two-factor authentication |
+| `POST` | `/api/v1/users/security/2fa/enable` | Enable two-factor authentication after code confirmation |
+| `POST` | `/api/v1/users/security/2fa/disable` | Disable two-factor authentication after reauthentication |
+| `GET` / `POST` | `/api/v1/users/security/recovery` | Read recovery status or regenerate recovery codes |
+| `GET` / `POST` / `DELETE` | `/api/v1/users/security/passkeys` | List, register, or revoke passkeys |
 | `GET` | `/api/v1/users/devices` | List the current user's devices |
 | `POST` | `/api/v1/users/devices` | Add a named device |
 | `DELETE` | `/api/v1/users/devices/{deviceId}` | Remove an owned device |
@@ -42,6 +48,8 @@ The browser registration route is `/server/auth/register`; public registration i
 | `DELETE` | `/api/v1/users/tokens/{tokenId}` | Revoke an owned token |
 
 User self-management routes require an authenticated user identity. API tokens are sent as `Authorization: Bearer <token>`; browser forms use the account session and CSRF protection. Routes identify the current user from the credential and do not accept a caller-selected user ID. There is no API to read another user's profile, devices, tokens, or test history. The live OpenAPI document is the authoritative request/response schema.
+
+Public registration is available only with `server.users.enabled: true` and `server.users.registration.mode: open`; private mode returns 404 for public registration. Server administrators can issue a single-use user setup link in either mode. Users choose their own password through that link. Admin moderation routes are under `/api/v1/server/{admin_path}/moderation/users`; user email addresses are masked in moderation responses.
 
 Public server pages have JSON representations under `/api/v1/server/`, including health, help, privacy, DPO, security policy, security acknowledgments, and about information. Contact form submissions use a two-step review and confirmation flow; the API descriptor exposes active form fields and captcha requirements without returning provider secrets.
 
