@@ -21,6 +21,8 @@ MCP clients connect to any MCP endpoint above using the same API bearer token as
 
 GraphQL is read-only. Send a query with `GET` query parameters or a JSON `POST` body to `/api/v1/server/graphql`; `/api/graphql` is an alias. Queries can read public health, the authenticated user's own test history, an owned result, or a publicly shared result. Supply `Authorization: Bearer <user-token>` for private account data; API session cookies do not identify a user. The endpoint never provides mutations.
 
+The GraphiQL page at `/server/docs/graphql` loads its pinned GraphiQL 4.1.2 and React/ReactDOM 18.3.1 assets from the server's embedded static files. It makes no request to a third-party asset CDN.
+
 ## Deployment integrations
 
 The service can run as a container or a foreground binary managed by a service supervisor. Configure a trusted reverse proxy to provide HTTPS when needed. Do not enable forwarding-header trust for an arbitrary internet-facing proxy.
