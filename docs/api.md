@@ -1,6 +1,6 @@
 # HTTP API
 
-CasSpeed's canonical REST base is `/api/v1`. The running server publishes its OpenAPI contract at `/api/v1/server/swagger`; Swagger UI is available at `/server/docs/swagger`. JSON responses use an `ok` field and structured data or errors. Error bodies must not expose filesystem paths, credentials, or private user data.
+CasSpeed's canonical REST base is `/api/{api_version}`, selected by `server.api_version` (`v1` by default; `v1` and `v2` are supported). Routes below use `v1` as the default example; substitute the configured version when it is `v2`. The running server publishes its OpenAPI contract at `/api/{api_version}/server/swagger`; Swagger UI is available at `/server/docs/swagger`. JSON responses use an `ok` field and structured data or errors. Error bodies must not expose filesystem paths, credentials, or private user data.
 
 ## Speed tests and sharing
 
@@ -47,6 +47,9 @@ The browser registration route is `/server/auth/register`; public registration i
 | `GET` | `/api/v1/users/tokens` | List token metadata (never token values) |
 | `POST` | `/api/v1/users/tokens` | Create a user token; its value is returned once |
 | `DELETE` | `/api/v1/users/tokens/{tokenId}` | Revoke an owned token |
+| `POST` | `/api/v1/users/data/export` | Request a personal data export |
+| `GET` | `/api/v1/users/data/export/{export_id}` | Download a ready export |
+| `POST` | `/api/v1/users/data/delete` | Request account deletion |
 
 User self-management routes require an authenticated user identity. API tokens are sent as `Authorization: Bearer <token>`; browser forms use the account session and CSRF protection. Routes identify the current user from the credential and do not accept a caller-selected user ID. There is no API to read another user's profile, devices, tokens, or test history. The live OpenAPI document is the authoritative request/response schema.
 
@@ -66,6 +69,8 @@ Administrator bearer tokens can manage reusable user-registration codes at `/api
 The raw invite code is returned only at creation; storage retains its SHA-256 hash. A maximum of `0` means unlimited uses. Public invite acceptance is available at `/api/v1/server/auth/invite/user/{token}` and the matching browser flow is `/server/auth/invite/user/{token}`. The live OpenAPI document specifies request and response fields.
 
 Public server pages have JSON representations under `/api/v1/server/`, including health, help, privacy, DPO, security policy, security acknowledgments, and about information. Contact form submissions use a two-step review and confirmation flow; the API descriptor exposes active form fields and captcha requirements without returning provider secrets.
+
+Administrators configure analytics at `/server/{admin_path}/tracking` and `GET`/`PATCH /api/v1/server/{admin_path}/tracking`. Provider scripts are emitted only after analytics consent. Privacy configuration is available through `GET`/`PATCH /api/v1/server/{admin_path}/pages/privacy`.
 
 Password reset requests use `POST /api/v1/server/auth/password/forgot` or the server-rendered `GET`/`POST /server/auth/password/forgot` form. With SMTP configured, the service emails a one-hour, single-use link. Complete the reset with `POST /api/v1/server/auth/password/reset` or use the server-rendered form at `/server/auth/password/reset`; completing a reset changes the stored password and revokes the user's existing sessions. Responses do not disclose whether the submitted email belongs to an account.
 

@@ -32,6 +32,7 @@ server:
   fqdn: speed.example.org
   mode: production
   admin_path: administration
+  api_version: v1
   branding:
     title: CasSpeed
     tagline: A privacy-respecting speed test
@@ -137,6 +138,10 @@ server:
         description_suffix_sold: Analytics data may be shared with third parties.
     third_party:
       services: []
+  tracking:
+    type: none
+    id: ""
+    url: ""
 web:
   ui:
     theme: dark
@@ -161,7 +166,11 @@ SMTP settings may be supplied in `server.notifications.email.smtp` and `server.n
 
 Other `server` settings include contact recipients and webhooks, DPO details, contact-form CAPTCHA and abuse controls, SSL certificates and Let's Encrypt, scheduler tasks and timezone, rate limits, branding, and SEO. `web.security.publish_pgp_key` controls public PGP-key publication. Do not put secrets in public documentation or expose them through public configuration APIs.
 
-The `/server/privacy` page and `/api/v1/server/privacy` response use `server.privacy` to show sale status, sharing, cookie descriptions, retention, and third-party services. The CCPA controls appear only when `server.privacy.data.sold` is true. Administrators can edit these settings at `/server/{admin_path}/privacy`; the authenticated API mirror is `/api/v1/server/{admin_path}/pages/privacy` (`GET` and `PATCH`). Operators may extend the built-in policy with `server.branding.content.privacy`; the built-in collection, usage, and security sections remain application content.
+The `/server/privacy` page and `/api/{api_version}/server/privacy` response use `server.privacy` to show sale status, sharing, cookie descriptions, retention, and third-party services. The CCPA controls appear only when `server.privacy.data.sold` is true. Administrators can edit these settings at `/server/{admin_path}/privacy`; the authenticated API mirror is `/api/{api_version}/server/{admin_path}/pages/privacy` (`GET` and `PATCH`). Operators may extend the built-in policy with `server.branding.content.privacy`; the built-in collection, usage, and security sections remain application content.
+
+`server.api_version` selects `v1` or `v2` for the canonical REST prefix; the default is `v1`. The compatibility alias `/api` remains available for explicitly documented unversioned endpoints.
+
+`server.tracking` supports `none`, `google`, `matomo`, `piwik`, `owa`, `fathom`, `plausible`, `umami`, `simple`, and `cloudflare`. Provider-specific ID and URL validation is applied at startup and when saved from `/server/{admin_path}/tracking` or its authenticated API mirror `/api/{api_version}/server/{admin_path}/tracking`. Analytics markup and provider hosts are added only after analytics consent. The same-origin `/server/tracking.js` endpoint returns 404 unless the provider is configured and the visitor has opted in; tracking is suppressed on `.onion` and `.i2p` requests.
 
 ## Secrets and operations
 
