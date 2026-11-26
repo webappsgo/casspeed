@@ -41,6 +41,14 @@ Command-line path flags take precedence over their matching environment variable
 
 `HOSTNAME` is a fallback input when resolving the server's public hostname. The service also uses operating-system variables such as `ProgramData` and `AppData` when selecting Windows paths.
 
+## Overlay networks
+
+Tor hidden service support starts an app-managed Tor process when a Tor binary is available. The service creates its own v3 onion address and publishes the hostname in health output. `server.tor` controls its binary path, public discovery, contact email, outbound networking, timeouts, circuits, bandwidth, and hidden-service settings. Inspect and change these values at `/server/{admin_path}/network/tor`; the authenticated API is `/api/{api_version}/server/{admin_path}/network/tor`.
+
+I2P is opt-in outside containers and defaults on inside containers. Set `server.i2p.enabled`, `I2P_ENABLED`, or `--i2p` to control it. When enabled, the server prefers a dedicated `i2pd` process and falls back to the configured SAM bridge when no binary is available.
+
+The I2P settings are `server.i2p.binary` (empty for auto-detection), `sam_address` (default `127.0.0.1:7656`), `virtual_port` (default `80`), `inbound_length` and `outbound_length` (default `3`, range `0–7`), `inbound_quantity` and `outbound_quantity` (default `5`, range `1–16`), `signature_type` (default `7`, accepted values `0` or `7`), and `bootstrap_timeout` (default `300` seconds, range `30–600`). `server.i2p.expose` defaults to false; set it true to include a healthy `.b32.i2p` address in `/api/autodiscover`. The admin page at `/server/{admin_path}/network/i2p` displays status and provides the configuration controls; the authenticated API mirror provides status, validation, restart, and address regeneration.
+
 The initial `--config`, `--data`, `--cache`, `--log`, and `--backup` paths use OS-specific defaults. Settings are merged from `server.yml`, ordered files under `yaml.d/`, and `secrets.yml`; the generated secrets file is private and credential-bearing connection strings are not meant to be copied into public configuration examples.
 
 ## YAML settings

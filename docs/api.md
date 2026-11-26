@@ -124,11 +124,17 @@ Tokens use the `adm_` administrator or `usr_` user prefix and a cryptographicall
 
 ## GraphQL
 
-The read-only GraphQL endpoint is `/api/v1/server/graphql`, with `/api/graphql` as an alias. It exposes public health data, a user's own history and results, and public fields from shared results. Send a user bearer token for API access; browser sessions identify the user only on web pages. The schema has no mutations. GraphiQL is available at `/server/docs/graphql`.
+The read-only GraphQL endpoint is `/api/v1/server/graphql`, with `/api/graphql` as an alias. It exposes public health data and, for the authenticated account, profile, settings, security summary, device and API-token metadata, test history, and owned results; public fields from shared results are available by share code. Send a user bearer token for private account data; browser sessions identify a user only on web pages. The schema has no mutations and never returns credentials, token secrets, or private keys. GraphiQL is available at `/server/docs/graphql`.
 
 ## MCP
 
 The Streamable HTTP MCP endpoint is `/api/v1/server/mcp`, with direct aliases `/api/mcp` and `/mcp`. It uses the same bearer token, ownership checks, and scopes as REST. MCP requests use JSON-RPC 2.0 over `POST` with protocol revision `2026-07-28`, matching `MCP-Protocol-Version`, `Mcp-Method`, and `_meta` values. Browser origins must match the request origin or an explicit configured CORS origin; wildcard CORS does not authorize cross-origin MCP requests.
+
+## Overlay network administration
+
+Tor administration is available to an administrator bearer token at `/api/{api_version}/server/{admin_path}/network/tor`: `GET` returns status and settings, `PATCH` validates, saves, and applies settings, and `POST` to `/validate`, `/restart`, or `/regenerate` validates settings, restarts Tor, or creates a new onion identity. Vanity search uses `GET`, `POST`, and `DELETE` at `/vanity`; apply a candidate with `POST /vanity/apply` and import external Tor v3 key files with multipart `POST /import`. The corresponding web interface is `/server/{admin_path}/network/tor` and requires an administrator session.
+
+I2P administration is available to an administrator bearer token at `/api/{api_version}/server/{admin_path}/network/i2p`: `GET` returns runtime status and settings, and `PATCH` validates, saves, and applies settings. `POST` to `/validate`, `/restart`, or `/regenerate` validates settings, restarts the provider, or creates a new `.b32.i2p` identity. The corresponding web interface is `/server/{admin_path}/network/i2p` and requires an administrator session. Public autodiscovery includes an overlay hostname only when its `expose` setting is enabled and the service is healthy.
 
 ## Health and public server information
 
