@@ -32,6 +32,13 @@ server:
   fqdn: speed.example.org
   mode: production
   admin_path: administration
+  branding:
+    title: CasSpeed
+    tagline: A privacy-respecting speed test
+    content:
+      about: ""
+      privacy: ""
+      terms: ""
   users:
     enabled: true
     registration:
@@ -80,6 +87,10 @@ server:
     contact:
       enabled: true
       captcha: simple
+      success_message: Thank you for your message.
+    help:
+      content: ""
+      mcp: ""
   security:
     reports:
       retention_days: 365
