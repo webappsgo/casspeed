@@ -40,6 +40,19 @@ server:
       allowed_domains: []
       blocked_domains: []
       invite_expiration_days: 7
+    roles:
+      available: [admin, user]
+      default: user
+      permissions:
+        admin: [read, write, delete]
+        user: [read, own_profile, own_api_tokens]
+    auth:
+      require_2fa: false
+      allow_2fa: true
+      password_min_length: 8
+      password_require_uppercase: false
+      password_require_number: false
+      password_require_special: false
   database:
     driver: file
   cache:
@@ -86,7 +99,7 @@ test:
   timeout: 60
 ```
 
-User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
+User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. `roles.available` is the allowlist for account and invite roles; `roles.default` applies to new self-registrations. The permissions map associates configured role names with their regular-user permissions and never grants Server Admin access. The `auth` section controls password complexity and whether users may enable two-factor authentication. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
 
 `server.database.driver` selects the database implementation. The default `file` value uses the application's SQLite storage. Cache type can be `none`, `memory`, `valkey`, or `redis`; URL schemes `valkey://`, `redis://`, `valkeys://`, and `rediss://` are supported. Cluster mode requires database index zero. Cache connection options include TLS, certificate paths, pool sizing, timeout, key prefix, and expiry. A credential-bearing `CACHE_URL` is saved in `secrets.yml`; subsequent starts use the saved URL rather than replacing it from the environment.
 
