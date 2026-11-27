@@ -43,7 +43,7 @@ api_version: v1
 - **Device:** identifier, owning user, user-defined name, and last-seen time. Device records are private to their owner.
 - **API token:** identifier, owning user, name, hashed user token, and last-used time. The raw token is a secret and is never stored or shown again after creation. Tokens follow the format required by AI.md PART 11.
 - **Share:** an eight-character base62 code associated with a result; valid only while the result exists. A share may expose only the result fields permitted by the owner's sharing preference.
-- Client IP addresses are never stored in plaintext. Deleted user data is removed immediately; anonymous results expire according to configured retention; authenticated history has no automatic expiry. Device names are user-defined and 1–64 characters long.
+- Speed-test result records never store a plaintext client IP; they retain only a one-way hash. AI.md requires resolved full client IPs in operational access/security logs and rate-limit/audit records, so those operational records follow the logging rules in AI.md. Deleted user data is removed immediately; anonymous results expire according to configured retention; authenticated history has no automatic expiry. Device names are user-defined and 1–64 characters long.
 
 ### Trust boundaries & external services
 
@@ -61,7 +61,7 @@ api_version: v1
 
 ### Security decisions & exceptions
 
-- Client IP privacy is a product requirement: only a one-way hash may be persisted.
+- Client IP privacy is a product requirement for speed-test result data: only a one-way hash may be persisted there. Operational logging follows AI.md's explicit requirement to record the resolved full client IP for access, security, rate-limit, and audit purposes.
 - Sharing is opt-in per result and does not make the owner's private account history public.
 - There are no intentional security exceptions or weaker compatibility modes.
 

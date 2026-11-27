@@ -16,11 +16,17 @@ When multi-user accounts are enabled, `/server/{admin_path}/users` supports user
 
 Reusable registration codes are managed at `/server/{admin_path}/users/invites`; creation selects a regular-user role, expiry, and maximum uses (`0` means unlimited). The raw code is shown only when created. Administrators can list and revoke codes. The matching API routes are under `/api/v1/server/{admin_path}/users/invites` and require an administrator bearer token.
 
+Server Admin invitations are separate from regular-user registration codes. Create them at `/server/{admin_path}/admins/invite`; the link is displayed once, expires after the selected period (seven days by default), and can be limited to one or more uses (`0` means unlimited). The invitee selects their own username and password. Optional TOTP enrollment displays recovery codes once. The API create route is `POST /api/{api_version}/server/{admin_path}/admins/invite`; browser acceptance uses CSRF-protected GET/POST forms at `/server/auth/invite/server/{token}`.
+
+The admin dashboard also provides server status and statistics, branding, email settings and templates, scheduler controls, backups, page content, compliance reports, public report review, overlay-network settings, and security controls. Network blocklists are managed at `/server/{admin_path}/network/blocklists`; administrators can inspect sources and health, update feeds, and check an address. Allowlist, blocked-address, and locked-account controls are under `/server/{admin_path}/security/`. Mutating browser forms use the admin session and CSRF protection; their corresponding API routes require an admin bearer token.
+
 Public self-registration follows `server.users.registration.mode`: `open` permits the registration form, and `private` returns 404 for it. Administrator-issued setup links remain available in both modes. User account sessions and `usr_` tokens remain separate from administrator sessions and `adm_` tokens.
 
 ## Administration API
 
 The Admin API exposes machine-readable server, page, privacy, tracking, role, and user-moderation settings under `/api/{api_version}/server/{admin_path}/`; requests require an `adm_` bearer token. The operator token is generated into `secrets.yml` and printed once at first creation; the setup-created admin API token is also accepted and stored only as a SHA-256 hash. The live OpenAPI document is available at `/api/{api_version}/server/swagger`. Browser form routes use the admin session and require CSRF protection; they work without JavaScript. Operational routes document their supported methods; status pages do not imply that they can change system services.
+
+The logs API lists available files at `GET /api/{api_version}/server/{admin_path}/logs`, returns a bounded, paginated set of entries at `GET .../logs/{type}`, and downloads a log at `GET .../logs/{type}/download`. Log types are allowlisted. The API does not provide a clear operation; `audit.log` remains append-only.
 
 ## Operational guidance
 

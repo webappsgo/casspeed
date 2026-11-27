@@ -60,6 +60,8 @@ The browser registration route is `/server/auth/register`; public registration i
 
 User self-management routes require an authenticated user identity. API tokens are sent as `Authorization: Bearer <token>`; browser forms use the account session and CSRF protection. Routes identify the current user from the credential and do not accept a caller-selected user ID. There is no API to read another user's profile, devices, tokens, or test history. The live OpenAPI document is the authoritative request/response schema.
 
+Additional account-security operations include `POST /api/v1/users/security/password` to change a password, `GET /api/v1/users/security/sessions` to list active sessions, `DELETE /api/v1/users/security/sessions/{session_id}` to revoke one, and `POST /api/v1/users/security/recovery-keys/ack` to acknowledge one-time recovery-code display. User token metadata can be read at `GET /api/v1/users/tokens/{token_id}`; the raw secret is returned only by token creation.
+
 Public registration is available only with `server.users.enabled: true` and `server.users.registration.mode: open`; private mode returns 404 for public registration. Server administrators can issue a single-use user setup link in either mode. Users choose their own password through that link. Admin moderation routes are under `/api/v1/server/{admin_path}/moderation/users`; user email addresses are masked in moderation responses.
 
 ## Preferences, consent, and contact
@@ -135,6 +137,10 @@ The Streamable HTTP MCP endpoint is `/api/v1/server/mcp`, with direct aliases `/
 Tor administration is available to an administrator bearer token at `/api/{api_version}/server/{admin_path}/network/tor`: `GET` returns status and settings, `PATCH` validates, saves, and applies settings, and `POST` to `/validate` or `/regenerate` validates settings or creates a new onion identity. Vanity search uses `GET`, `POST`, and `DELETE` at `/vanity`; apply a candidate with `POST /vanity/apply` and import external Tor v3 key files with multipart `POST /import`. The corresponding web interface is `/server/{admin_path}/network/tor` and requires an administrator session.
 
 I2P administration is available to an administrator bearer token at `/api/{api_version}/server/{admin_path}/network/i2p`: `GET` returns runtime status and settings, and `PATCH` validates, saves, and applies settings. `POST` to `/validate`, `/restart`, or `/regenerate` validates settings, restarts the provider, or creates a new `.b32.i2p` identity. The corresponding web interface is `/server/{admin_path}/network/i2p` and requires an administrator session. Public autodiscovery includes an overlay hostname only when its `expose` setting is enabled and the service is healthy.
+
+## Server administration APIs
+
+Administrative requests use an `adm_` bearer token and are scoped under `/api/{api_version}/server/{admin_path}/`. Current API groups include server status and statistics, backup create/list/restore/download, branding, email settings and templates, scheduler operations, public-page content, privacy and tracking settings, compliance and breach records, user moderation and invitations, network blocklists, Tor and I2P controls, and security allowlist, blocked-address, and account-lock controls. The log API lists available files with `GET .../logs`, returns at most 500 entries with `GET .../logs/{type}?limit=100&offset=0`, and downloads the named file with `GET .../logs/{type}/download`. Log names are allowlisted, reads are bounded, and audit logs cannot be cleared. Consult the live OpenAPI document for exact schemas and currently mounted routes.
 
 ## Health and public server information
 
