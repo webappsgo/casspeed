@@ -9,6 +9,7 @@
 - GraphQL request endpoint: `/api/v1/server/graphql`
 - Health API: `/api/v1/server/healthz` and `/api/healthz`
 - Security contact metadata: `/.well-known/security.txt`
+- AI agent discovery: `/.well-known/llms.txt` and `/llms.txt`
 - MCP Streamable HTTP: `/api/v1/server/mcp` (aliases: `/api/mcp`, `/mcp`)
 
 The speed test runs against the CasSpeed server itself. No external test network or identity provider is required. OIDC, LDAP, SAML, webhooks, federation, Android App Links, and Apple Universal Links are not enabled by this project configuration.

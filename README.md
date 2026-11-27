@@ -91,6 +91,8 @@ The server creates its configuration in the operating system's configuration dir
 
 The versioned REST API is rooted at `/api/v1`. The server publishes its OpenAPI document at `/api/v1/server/swagger` and its Swagger UI at `/server/docs/swagger`.
 
+AI agent discovery is available at `/.well-known/llms.txt` and `/llms.txt`; the Streamable HTTP MCP endpoint is `/api/v1/server/mcp`.
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /server/healthz` | Server health |

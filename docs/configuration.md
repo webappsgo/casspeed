@@ -69,6 +69,7 @@ server:
   branding:
     title: CasSpeed
     tagline: A privacy-respecting speed test
+    description: A self-hosted, privacy-respecting internet speed testing service.
     content:
       about: ""
       privacy: ""
@@ -179,6 +180,10 @@ web:
   ui:
     theme: dark
   cors: "*"
+  llms:
+    include_endpoints: true
+    include_schemas: false
+    custom_sections: []
 test:
   max_concurrent: 3
   min_interval: 5
@@ -221,6 +226,8 @@ Other `server` settings include contact recipients and webhooks, DPO details, co
 The `/server/privacy` page and `/api/{api_version}/server/privacy` response use `server.privacy` to show sale status, sharing, cookie descriptions, retention, and third-party services. The CCPA controls appear only when `server.privacy.data.sold` is true. Administrators can edit these settings at `/server/{admin_path}/privacy`; the authenticated API mirror is `/api/{api_version}/server/{admin_path}/pages/privacy` (`GET` and `PATCH`). Operators may extend the built-in policy with `server.branding.content.privacy`; the built-in collection, usage, and security sections remain application content.
 
 `server.api_version` selects `v1` or `v2` for the canonical REST prefix; the default is `v1`. The compatibility alias `/api` remains available for explicitly documented unversioned endpoints.
+
+The generated AI discovery document is available at `/.well-known/llms.txt` and `/llms.txt`. `web.llms.include_endpoints` controls the endpoint list, `include_schemas` adds request and response schema details, and `custom_sections` appends up to ten Markdown sections. A custom section title is limited to 80 characters and its content to 4096 characters; HTML is escaped and links are limited to HTTPS or relative paths.
 
 `server.tracking` supports `none`, `google`, `matomo`, `piwik`, `owa`, `fathom`, `plausible`, `umami`, `simple`, and `cloudflare`. Provider-specific ID and URL validation is applied at startup and when saved from `/server/{admin_path}/tracking` or its authenticated API mirror `/api/{api_version}/server/{admin_path}/tracking`. Analytics markup and provider hosts are added only after analytics consent. The same-origin `/server/tracking.js` endpoint returns 404 unless the provider is configured and the visitor has opted in; tracking is suppressed on `.onion` and `.i2p` requests.
 
