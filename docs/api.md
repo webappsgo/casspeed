@@ -148,4 +148,4 @@ Metrics are available when `server.metrics.enabled` is true at `/api/{api_versio
 
 ## Representations
 
-The API uses JSON. Health endpoints also support plain text through content negotiation and `.txt` suffixes. Image exports return `image/png` or `image/svg+xml`.
+API responses default to JSON. An API request with `Accept: text/plain`, a recognized non-interactive HTTP-tool user agent, or a `.txt` suffix returns plain text; an explicit `Accept: application/json` takes precedence over user-agent detection, while `.txt` takes precedence over headers. Object responses print an `OK:` message followed by fields in JSON model order, nested fields use dot notation, and lists print an item count followed by their entries. Error responses use `ERROR: CODE: message` and retain the JSON response's HTTP status. Binary successes such as image exports keep their original media type and bytes for negotiated text requests; requesting their `.txt` form returns 404. Health endpoints keep their dedicated flat `key: value` text format.
