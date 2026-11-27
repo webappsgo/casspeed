@@ -103,7 +103,7 @@ Unshared results require their originating anonymous browser session or owning a
 
 ## Other
 
-Public information and help pages are served below `/server/`. The browser interface includes account, device, token, security, privacy-rights, test-history, and administration pages. Read-only GraphQL is available at `/api/v1/server/graphql`, with a browser explorer at `/server/docs/graphql`. MCP clients can connect to `/api/v1/server/mcp` using a scoped bearer token. Optional Tor and I2P services have configuration pages under `/server/{admin_path}/network/`; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/).
+Public information and help pages are served below `/server/`. The browser interface includes account, device, token, security, privacy-rights, test-history, and administration pages. Read-only GraphQL is available at `/api/v1/server/graphql`, with a browser explorer at `/server/docs/graphql`. The GraphQL and OpenAPI explorers load their assets from the server, without a third-party asset CDN. MCP clients can connect to `/api/v1/server/mcp` using a scoped bearer token. Optional Tor and I2P services have configuration pages under `/server/{admin_path}/network/`; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/).
 
 See the [translation guide](https://casapps-casspeed.readthedocs.io/en/latest/translating/) to contribute interface translations.
 
