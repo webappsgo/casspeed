@@ -1,100 +1,31 @@
-# =============================================================================
-# Build Stage - Compile Go binary
-# =============================================================================
 FROM casjaysdev/go:latest AS builder
 
 ARG TARGETARCH
-ARG VERSION=dev
+ARG VERSION=devel
 ARG BUILD_DATE
-ARG COMMIT_ID
+ARG BUILD_EPOCH=0
+ARG COMMIT_ID=unknown
+ARG OFFICIAL_SITE
 
-WORKDIR /build
-
-# Copy go.mod first for layer caching
+WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Copy source and build
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
-    -ldflags "-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildDate=${BUILD_DATE}'" \
-    -o /build/binary/casspeed ./src
+    -ldflags "-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildEpoch=${BUILD_EPOCH}' -X 'main.OfficialSite=${OFFICIAL_SITE}'" \
+    -o /app/binary/casspeed ./src
 
-# =============================================================================
-# Runtime Stage - Minimal Alpine image
-# =============================================================================
 FROM alpine:latest
 
-# ARGs for build-time values (set by docker build --build-arg)
-ARG VERSION=dev
-ARG BUILD_DATE
-ARG COMMIT_ID
-ARG LICENSE=MIT
-
-# Static Labels
-LABEL maintainer="casjay <docker-admin@casjaysdev.pro>" \
-      org.opencontainers.image.vendor="webappsgo" \
-      org.opencontainers.image.authors="webappsgo" \
-      org.opencontainers.image.title="casspeed" \
-      org.opencontainers.image.base.name="casspeed" \
-      org.opencontainers.image.description="Self-hosted speed testing server" \
-      org.opencontainers.image.url="https://github.com/webappsgo/casspeed" \
-      org.opencontainers.image.source="https://github.com/webappsgo/casspeed" \
-      org.opencontainers.image.documentation="https://github.com/webappsgo/casspeed" \
-      org.opencontainers.image.vcs-type="Git" \
-      com.github.containers.toolbox="false"
-
-# Dynamic Labels (from ARGs)
-LABEL org.opencontainers.image.licenses="${LICENSE}" \
-      org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.schema-version="${VERSION}" \
-      org.opencontainers.image.revision="${COMMIT_ID}"
-
-# Install required packages including Tor
-RUN apk add --no-cache \
-    git \
-    curl \
-    bash \
-    tini \
-    tor
-
-# Create directories with proper structure
-# Binary dirs: /config/casspeed/, /data/casspeed/
-# Service dirs created as needed by docker-compose volumes
-RUN mkdir -p /config/casspeed /config/casspeed/security /config/casspeed/tor \
-             /data/casspeed /data/tor \
-             /data/log/casspeed /data/backups/casspeed && \
-    chown -R root:root /config /data
-
-# Copy binary from builder stage (multi-stage build)
-COPY --from=builder /build/binary/casspeed /usr/local/bin/casspeed
-
-# Copy BUILD-TIME overlay (entrypoint.sh) from docker/rootfs/ into image
-# Note: This is docker/rootfs/ (build context), NOT runtime ./rootfs/ volumes
+RUN apk add --no-cache git curl bash tini tor i2pd tzdata ca-certificates
+COPY --from=builder /app/binary/casspeed /usr/local/bin/casspeed
 COPY docker/rootfs/ /
-
-# Copy Dockerfile to image (for reference and backup)
 COPY docker/Dockerfile /root/Dockerfile
 
-# Make all binaries/scripts in /usr/local/bin executable (755)
-RUN chmod 755 /usr/local/bin/*
+ENV TZ=America/New_York \
+    DATABASE_DIR=/data/db/sqlite
 
-# Set environment
-# Note: Tor auto-enabled because tor binary is installed above
-ENV MODE=development \
-    TZ=America/New_York
-
-# Expose internal port (always 80)
 EXPOSE 80
-
-# Stop signal for graceful shutdown
 STOPSIGNAL SIGRTMIN+3
-
-# Health check (long start period for services that need initialization)
-HEALTHCHECK --start-period=10m --interval=5m --timeout=15s --retries=3 \
-    CMD /usr/local/bin/casspeed --status || exit 1
-
-# Use tini as init with signal propagation
-# -p SIGTERM: propagate SIGTERM to child processes
-ENTRYPOINT [ "tini", "-p", "SIGTERM", "--", "/usr/local/bin/entrypoint.sh" ]
+HEALTHCHECK --start-period=10m --interval=5m --timeout=15s --retries=3 CMD /usr/local/bin/casspeed --status || exit 1
+ENTRYPOINT ["tini", "-p", "SIGTERM", "--", "/usr/local/bin/entrypoint.sh"]

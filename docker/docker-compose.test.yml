@@ -1,25 +1,64 @@
-name: casspeed-test
+# nginx proxy address - http://172.17.0.1:64580
+# casspeed - automated test stack
+
+name: casspeed
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "1"
 
 services:
   casspeed:
-    image: casspeed:test
-    container_name: casspeed-test
+    image: ghcr.io/casapps/casspeed:devel
+    container_name: casspeed-app
+    hostname: casspeed
     restart: "no"
+    pull_policy: always
+    logging: *default-logging
     environment:
-      - MODE=development
-      - DEBUG=true
-      - TZ=America/New_York
-    ports:
-      - "64580:80"
+      MODE: development
+      DEBUG: "true"
+      PORT: 80
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: casspeed-app
+      CACHE_URL: valkey://casspeed-cache:6379
     volumes:
-      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
-      # NEVER run from project directory - always use temp dir workflow
-      - ./rootfs/config:/config
-      - ./rootfs/data:/data
+      - ./volumes/config:/config:z
+      - ./volumes/data:/data:z
+    ports:
+      - "172.17.0.1:64580:80"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casspeed", "--status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      casspeed-cache:
+        condition: service_healthy
     networks:
-      - casspeed-test
+      - casspeed
+
+  casspeed-cache:
+    image: valkey/valkey:alpine
+    container_name: casspeed-cache
+    restart: "no"
+    pull_policy: always
+    logging: *default-logging
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - casspeed
 
 networks:
-  casspeed-test:
-    name: casspeed-test
+  casspeed:
+    name: casspeed
     external: false

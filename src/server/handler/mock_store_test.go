@@ -2,7 +2,10 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/casapps/casspeed/src/server/model"
@@ -12,12 +15,12 @@ import (
 // Only the methods exercised by the handler tests need real implementations;
 // the rest return nil errors and nil values.
 type mockStore struct {
-	users    map[string]*model.User
-	sessions map[string]*model.Session
-	tests    map[string]*model.SpeedTest
+	users       map[string]*model.User
+	sessions    map[string]*model.Session
+	tests       map[string]*model.SpeedTest
 	testsByCode map[string]*model.SpeedTest
-	devices  map[string]*model.Device
-	tokens   map[string]*model.APIToken
+	devices     map[string]*model.Device
+	tokens      map[string]*model.APIToken
 
 	// Inject controllable errors.
 	errGetUserByUsername error
@@ -54,7 +57,10 @@ func (m *mockStore) CreateUser(_ context.Context, u *model.User) error {
 	if m.errCreateUser != nil {
 		return m.errCreateUser
 	}
-	m.users[u.ID] = u
+	if u.ID == 0 {
+		u.ID = int64(len(m.users) + 1)
+	}
+	m.users[strconv.FormatInt(u.ID, 10)] = u
 	return nil
 }
 
@@ -63,6 +69,24 @@ func (m *mockStore) GetUser(_ context.Context, id string) (*model.User, error) {
 		return nil, m.errGetUser
 	}
 	u := m.users[id]
+	if u == nil {
+		for _, candidate := range m.users {
+			if model.UserIDString(candidate.ID) == id {
+				u = candidate
+				break
+			}
+		}
+	}
+	if u == nil {
+		if numericID, err := strconv.ParseInt(id, 10, 64); err == nil {
+			for _, candidate := range m.users {
+				if candidate.ID == numericID {
+					u = candidate
+					break
+				}
+			}
+		}
+	}
 	return u, nil
 }
 
@@ -91,7 +115,16 @@ func (m *mockStore) GetUserByEmail(_ context.Context, email string) (*model.User
 }
 
 func (m *mockStore) UpdateUser(_ context.Context, u *model.User) error {
-	m.users[u.ID] = u
+	m.users[model.UserIDString(u.ID)] = u
+	return nil
+}
+
+func (m *mockStore) UpdateUserLastLogin(_ context.Context, userID string, at time.Time) error {
+	user, err := m.GetUser(context.Background(), userID)
+	if err != nil || user == nil {
+		return err
+	}
+	user.LastLogin = &at
 	return nil
 }
 
@@ -107,8 +140,8 @@ func (m *mockStore) CreateDevice(_ context.Context, d *model.Device) error {
 	m.devices[d.ID] = d
 	return nil
 }
-func (m *mockStore) GetDevice(_ context.Context, _ string) (*model.Device, error) {
-	return nil, nil
+func (m *mockStore) GetDevice(_ context.Context, id string) (*model.Device, error) {
+	return m.devices[id], nil
 }
 func (m *mockStore) GetUserDevices(_ context.Context, userID string) ([]*model.Device, error) {
 	if m.errGetUserDevices != nil {
@@ -122,7 +155,7 @@ func (m *mockStore) GetUserDevices(_ context.Context, userID string) ([]*model.D
 	}
 	return devices, nil
 }
-func (m *mockStore) UpdateDevice(_ context.Context, _ *model.Device) error  { return nil }
+func (m *mockStore) UpdateDevice(_ context.Context, _ *model.Device) error { return nil }
 func (m *mockStore) DeleteDevice(_ context.Context, id string) error {
 	if m.errDeleteDevice != nil {
 		return m.errDeleteDevice
@@ -153,13 +186,15 @@ func (m *mockStore) GetSpeedTestByShareCode(_ context.Context, code string) (*mo
 	return m.testsByCode[code], nil
 }
 
-func (m *mockStore) GetUserSpeedTests(_ context.Context, _ string, _, _ int) ([]*model.SpeedTest, error) {
+func (m *mockStore) GetUserSpeedTests(_ context.Context, userID string, _, _ int) ([]*model.SpeedTest, error) {
 	if m.errGetHistory != nil {
 		return nil, m.errGetHistory
 	}
 	out := make([]*model.SpeedTest, 0, len(m.tests))
 	for _, t := range m.tests {
-		out = append(out, t)
+		if t.UserID == userID {
+			out = append(out, t)
+		}
 	}
 	return out, nil
 }
@@ -170,11 +205,26 @@ func (m *mockStore) GetDeviceSpeedTests(_ context.Context, _ string, _, _ int) (
 
 func (m *mockStore) UpdateSpeedTest(_ context.Context, t *model.SpeedTest) error {
 	m.tests[t.ID] = t
+	if t.ShareCode != "" {
+		m.testsByCode[t.ShareCode] = t
+	}
 	return nil
 }
 
 func (m *mockStore) DeleteSpeedTest(_ context.Context, id string) error {
 	delete(m.tests, id)
+	return nil
+}
+
+func (m *mockStore) DeleteAnonymousSpeedTestsBefore(_ context.Context, cutoff time.Time) error {
+	for id, test := range m.tests {
+		if test.UserID == "" && test.Timestamp.Before(cutoff) {
+			delete(m.tests, id)
+			if test.ShareCode != "" {
+				delete(m.testsByCode, test.ShareCode)
+			}
+		}
+	}
 	return nil
 }
 
@@ -185,6 +235,9 @@ func (m *mockStore) IncrementShareViews(_ context.Context, code string) error {
 	return nil
 }
 
+func (m *mockStore) CountSpeedTests(_ context.Context) (int, error) { return len(m.tests), nil }
+func (m *mockStore) CountUsers(_ context.Context) (int, error)      { return len(m.users), nil }
+
 func (m *mockStore) CreateAPIToken(_ context.Context, token *model.APIToken) error {
 	if m.errCreateAPIToken != nil {
 		return m.errCreateAPIToken
@@ -192,10 +245,17 @@ func (m *mockStore) CreateAPIToken(_ context.Context, token *model.APIToken) err
 	m.tokens[token.ID] = token
 	return nil
 }
-func (m *mockStore) GetAPIToken(_ context.Context, _ string) (*model.APIToken, error) {
-	return nil, nil
+func (m *mockStore) GetAPIToken(_ context.Context, id string) (*model.APIToken, error) {
+	return m.tokens[id], nil
 }
-func (m *mockStore) GetAPITokenByToken(_ context.Context, _ string) (*model.APIToken, error) {
+func (m *mockStore) GetAPITokenByToken(_ context.Context, raw string) (*model.APIToken, error) {
+	hash := sha256.Sum256([]byte(raw))
+	encoded := hex.EncodeToString(hash[:])
+	for _, token := range m.tokens {
+		if token.Token == encoded {
+			return token, nil
+		}
+	}
 	return nil, nil
 }
 func (m *mockStore) GetUserAPITokens(_ context.Context, userID string) ([]*model.APIToken, error) {
@@ -221,6 +281,16 @@ func (m *mockStore) DeleteAPIToken(_ context.Context, id string) error {
 	delete(m.tokens, id)
 	return nil
 }
+func (m *mockStore) DeleteExpiredAPITokens(_ context.Context, _ time.Time) error { return nil }
+func (m *mockStore) CreatePasswordResetToken(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) CompletePasswordReset(_ context.Context, _ string, _ time.Time, _ string) (bool, error) {
+	return false, nil
+}
+func (m *mockStore) DeleteExpiredPasswordResetTokens(_ context.Context, _ time.Time) error {
+	return nil
+}
 
 func (m *mockStore) CreateSession(_ context.Context, s *model.Session) error {
 	if m.errCreateSession != nil {
@@ -242,13 +312,18 @@ func (m *mockStore) DeleteSession(_ context.Context, id string) error {
 	return nil
 }
 
-func (m *mockStore) DeleteExpiredSessions(_ context.Context) error { return nil }
+func (m *mockStore) DeleteExpiredSessions(_ context.Context) error        { return nil }
+func (m *mockStore) DeleteUserSessions(_ context.Context, _ string) error { return nil }
 
 func (m *mockStore) GetAdminByUsername(_ context.Context, _ string) (*model.Admin, error) {
 	return nil, nil
 }
-func (m *mockStore) CreateAdmin(_ context.Context, _ *model.Admin) error { return nil }
-func (m *mockStore) UpdateAdminLastLogin(_ context.Context, _ int) error { return nil }
+func (m *mockStore) GetAdminByAPITokenHash(_ context.Context, _ string) (*model.Admin, error) {
+	return nil, nil
+}
+func (m *mockStore) CreateAdmin(_ context.Context, _ *model.Admin) error              { return nil }
+func (m *mockStore) UpdateAdminLastLogin(_ context.Context, _ int) error              { return nil }
+func (m *mockStore) UpdateAdminAPITokenHash(_ context.Context, _ int, _ string) error { return nil }
 func (m *mockStore) UpdateAdminFailedAttempts(_ context.Context, _ int, _ int) error {
 	return nil
 }
@@ -266,6 +341,15 @@ func (m *mockStore) DeleteAdminSession(_ context.Context, _ string) error       
 func (m *mockStore) DeleteExpiredAdminSessions(_ context.Context) error           { return nil }
 func (m *mockStore) GetSetupComplete(_ context.Context) (bool, error)             { return true, nil }
 func (m *mockStore) SetSetupComplete(_ context.Context, _ bool) error             { return nil }
+func (m *mockStore) CreateCaptchaChallenge(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+func (m *mockStore) ConsumeCaptchaChallenge(_ context.Context, _ string) (string, time.Time, error) {
+	return "", time.Time{}, nil
+}
+func (m *mockStore) DeleteExpiredCaptchaChallenges(_ context.Context, _ time.Time) error {
+	return nil
+}
 
 // sentinel error for tests
 var errDB = errors.New("db error")

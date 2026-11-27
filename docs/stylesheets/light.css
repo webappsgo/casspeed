@@ -1,7 +1,7 @@
 /* Light theme customization for casspeed documentation */
 /* This stylesheet is applied when light theme is selected */
 
-:root {
+[data-md-color-scheme="default"] {
   /* Custom light theme colors */
   --md-primary-fg-color: #1976d2;
   --md-primary-fg-color--light: #2196f3;

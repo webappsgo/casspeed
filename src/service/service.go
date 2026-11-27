@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // Manager handles systemd service management
@@ -95,11 +96,32 @@ func (m *Manager) Status() (string, error) {
 		if err != nil {
 			return "inactive", nil
 		}
-		return string(out), nil
+		return strings.TrimSpace(string(out)), nil
 	case "darwin":
-		return "unknown", fmt.Errorf("status not implemented for macOS")
+		out, err := exec.Command("launchctl", "print", "system/"+m.ServiceName).CombinedOutput()
+		if err != nil {
+			if strings.Contains(strings.ToLower(string(out)), "could not find service") {
+				return "inactive", nil
+			}
+			return "unknown", fmt.Errorf("checking launchd service status: %w", err)
+		}
+		if strings.Contains(string(out), "state = running") {
+			return "active", nil
+		}
+		return "inactive", nil
 	case "windows":
-		return "unknown", fmt.Errorf("status not implemented for Windows")
+		out, err := exec.Command("sc", "query", m.ServiceName).CombinedOutput()
+		if err != nil {
+			return "unknown", fmt.Errorf("checking Windows service status: %w", err)
+		}
+		status := strings.ToUpper(string(out))
+		if strings.Contains(status, "RUNNING") {
+			return "active", nil
+		}
+		if strings.Contains(status, "STOPPED") {
+			return "inactive", nil
+		}
+		return "unknown", nil
 	default:
 		return "", fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}

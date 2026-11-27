@@ -4,6 +4,7 @@
 variables:
   PROJECT_NAME: "casspeed"
   PROJECT_ORG: "webappsgo"
+  PROJECT_METADATA_ORG: "casapps"
   CGO_ENABLED: "0"
   GOOS: linux
   GOARCH: amd64
@@ -13,9 +14,9 @@ variables:
 stages:
   - build
   - test
+  - security
   - package
   - release
-  - security
   - docker
 
 # =============================================================================
@@ -44,6 +45,17 @@ stages:
 # =============================================================================
 # RELEASE BUILDS (Tag Push: v* or semver)
 # =============================================================================
+
+build:check:
+  <<: *go-build
+  stage: build
+  script:
+    - go build -buildvcs=false -trimpath -o /dev/null ./src
+    - if [ -d "src/client" ]; then go build -buildvcs=false -trimpath -o /dev/null ./src/client; fi
+    - if [ -d "src/agent" ]; then go build -buildvcs=false -trimpath -o /dev/null ./src/agent; fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
 
 build:linux-amd64:
   <<: *go-build
@@ -201,15 +213,20 @@ test:
   <<: *go-build
   stage: test
   script:
-    - mkdir -p "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}"
-    - COVDIR="$(mktemp -d "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}/casspeed-XXXXXX")"
-    - go test -v -cover -coverprofile="$COVDIR/coverage.out" ./...
-    - test -s "$COVDIR/coverage.out" || { echo "ERROR: coverage profile is missing or empty" >&2; exit 1; }
-    - COVERAGE="$(go tool cover -func="$COVDIR/coverage.out" | awk '/^total:/ {gsub("%", "", $3); print $3}')"
-    - test -n "$COVERAGE" || { echo "ERROR: aggregate coverage could not be calculated" >&2; exit 1; }
-    - echo "Aggregate coverage: $COVERAGE%"
-    - >-
-      awk -v coverage="$COVERAGE" 'BEGIN { if (coverage < 60) { printf "ERROR: aggregate coverage is %s%%; required: >= 60%%\n", coverage > "/dev/stderr"; exit 1 } }'
+    - |
+      set -euo pipefail
+      mkdir -p "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}"
+      COVDIR=$(mktemp -d "${TMPDIR:-/tmp}/${CI_PROJECT_ROOT_NAMESPACE:-$CI_PROJECT_NAMESPACE}/casspeed-XXXXXX")
+      trap 'rm -rf -- "$COVDIR"' EXIT
+      mkdir -p "$COVDIR/data"
+      go test -v -cover ./... -args -test.gocoverdir="$COVDIR/data"
+      go tool covdata textfmt -i="$COVDIR/data" -o="$COVDIR/coverage.out"
+      COVERAGE=$(go tool cover -func="$COVDIR/coverage.out" | awk '/^total:/ {gsub("%", "", $3); print $3}')
+      echo "Aggregate coverage: $COVERAGE%"
+      awk -v coverage="$COVERAGE" 'BEGIN { exit !(coverage >= 60) }' || {
+        echo "ERROR: aggregate coverage is ${COVERAGE}%; required: >= 60%" >&2
+        exit 1
+      }
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_TAG =~ /^v?\d+\.\d+\.\d+/
@@ -621,8 +638,8 @@ docker:build:
         --build-arg BUILD_DATE="${BUILD_DATE}" \
         --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
         --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
-        --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
-        --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+        --label "org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
         --label "org.opencontainers.image.title=${PROJECT_NAME}" \
         --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
         --label "org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
@@ -633,8 +650,8 @@ docker:build:
         --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
-        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
-        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
         --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}" \
         --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
         --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
@@ -682,8 +699,8 @@ docker:build-devel:
         --build-arg BUILD_DATE="${BUILD_DATE}" \
         --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
         --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
-        --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
-        --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --label "org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+        --label "org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
         --label "org.opencontainers.image.title=${PROJECT_NAME}-devel" \
         --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
         --label "org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \
@@ -694,8 +711,8 @@ docker:build-devel:
         --label "org.opencontainers.image.url=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --label "org.opencontainers.image.documentation=${CI_PROJECT_URL}" \
-        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
-        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+        --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+        --annotation "manifest:org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
         --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}-devel" \
         --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
         --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \
@@ -729,14 +746,11 @@ lint:
 
 secret-scan:
   stage: security
-  image: trufflesecurity/trufflehog@sha256:9c7a8325d43a4af2960d3f21d61a08981d8a1bf0542e007efa2e47097e386452
+  image: trufflesecurity/trufflehog:latest
+  variables:
+    GIT_DEPTH: 0
   script:
-    - |
-      if [ "$CI_PIPELINE_SOURCE" = schedule ]; then
-        trufflehog git file://. --results=verified --exclude-paths=.github/trufflehog-exclude.txt --fail
-      else
-        trufflehog git file://. --since-commit HEAD~1 --results=verified,unknown --exclude-paths=.github/trufflehog-exclude.txt --fail
-      fi
+    - trufflehog git file://. --since-commit HEAD~1 --results=verified,unknown --exclude-paths=.github/trufflehog-exclude.txt --fail
 
 vulnerability-scan:
   stage: security
@@ -751,12 +765,18 @@ workflow-policy:
   image: casjaysdev/go:latest
   script:
     - |
-      if rg -n 'uses:.*@(v[0-9]|main|master)' .github/workflows .gitea/workflows .forgejo/workflows; then
-        echo "Unpinned workflow action found" >&2
+      if rg -n 'pull_request_target:' .github/workflows .gitea/workflows .forgejo/workflows; then
+        echo "ERROR: pull_request_target is forbidden" >&2
         exit 1
       fi
-      if rg -n '^\s*image: [^@]+(:[^@]+)?$' .gitlab-ci.yml; then
-        echo "Unpinned GitLab image found" >&2
+      bad_actions=$(grep -RhnE '^[[:space:]]*-?[[:space:]]*uses:' .github/workflows .gitea/workflows .forgejo/workflows | grep -vE 'uses:[[:space:]]*\./[^[:space:]#]+|uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)' || true)
+      if [ -n "$bad_actions" ]; then
+        echo "ERROR: unpinned or invalid workflow action references:" >&2
+        echo "$bad_actions" >&2
+        exit 1
+      fi
+      if rg -n '^[[:space:]]*image:[[:space:]]*[^@]+$' .gitlab-ci.yml | grep -vE 'image:[[:space:]]*(\$BUILD_IMAGE|casjaysdev/go:latest|trufflesecurity/trufflehog:latest)[[:space:]]*$'; then
+        echo "ERROR: unpinned GitLab image found" >&2
         exit 1
       fi
 
@@ -773,4 +793,4 @@ docker-scan:
   script:
     - docker build --build-arg VERSION=ci --tag casspeed:ci -f docker/Dockerfile .
     - docker save casspeed:ci -o /tmp/casspeed-ci-image.tar
-    - docker run --rm -v /tmp/casspeed-ci-image.tar:/tmp/casspeed-ci-image.tar aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb image --input /tmp/casspeed-ci-image.tar --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH
+    - docker run --rm -v /tmp/casspeed-ci-image.tar:/tmp/casspeed-ci-image.tar aquasec/trivy:0.70.0 image --input /tmp/casspeed-ci-image.tar --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH

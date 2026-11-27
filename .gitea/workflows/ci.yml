@@ -39,19 +39,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run tests with coverage
-        id: run-tests
         run: |
-          mkdir -p "/tmp/${{ gitea.repository_owner }}"
-          COVDIR=$(mktemp -d "/tmp/${{ gitea.repository_owner }}/$(basename "${{ gitea.repository }}")-XXXXXX")
-          echo "COVDIR=$COVDIR" >> "$GITEA_ENV"
-          echo "covdir=$COVDIR" >> "$GITEA_OUTPUT"
-          go test -cover -coverprofile="$COVDIR/coverage.out" ./...
-      - name: Upload coverage data
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
-        with:
-          name: coverage-data
-          path: ${{ steps.run-tests.outputs.covdir }}/coverage.out
-          retention-days: 1
+          set -euo pipefail
+          mkdir -p "${TMPDIR:-/tmp}/${{ gitea.repository_owner }}"
+          COVDIR=$(mktemp -d "${TMPDIR:-/tmp}/${{ gitea.repository_owner }}/$(basename "${{ gitea.repository }}")-XXXXXX")
+          trap 'rm -rf -- "$COVDIR"' EXIT
+          go mod download
+          mkdir -p "$COVDIR/data"
+          go test -cover ./... -args -test.gocoverdir="$COVDIR/data"
+          go tool covdata textfmt -i="$COVDIR/data" -o="$COVDIR/coverage.out"
+          COVERAGE=$(go tool cover -func="$COVDIR/coverage.out" | awk '/^total:/ {gsub("%", "", $3); print $3}')
+          echo "Aggregate coverage: $COVERAGE%"
+          awk -v coverage="$COVERAGE" 'BEGIN { exit !(coverage >= 60) }' || {
+            echo "::error::coverage $COVERAGE% < threshold 60%" >&2
+            exit 1
+          }
 
   build:
     if: gitea.event_name != 'schedule'
@@ -83,27 +85,6 @@ jobs:
           name: ci-build-output
           path: artifacts/
           retention-days: 1
-
-  coverage:
-    if: gitea.event_name != 'schedule'
-    needs: test
-    runs-on: ubuntu-26.04
-    container:
-      image: casjaysdev/go:latest
-      options: "--user 0:0"
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
-        with:
-          name: coverage-data
-          path: coverage
-      - name: Enforce coverage threshold
-        run: |
-          THRESHOLD=60
-          PCT=$(go tool cover -func=coverage/coverage.out | awk '/^total:/ {gsub("%","",$3); print int($3)}')
-          if [ "$PCT" -lt "$THRESHOLD" ]; then
-            echo "::error::coverage $PCT% < threshold $THRESHOLD%"
-            exit 1
-          fi
 
   upload-artifacts:
     if: gitea.event_name != 'schedule'
@@ -182,22 +163,33 @@ jobs:
       options: "--user 0:0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - name: Require SHA-pinned actions
+      - name: Require SHA-pinned actions and reject pull_request_target
         run: |
-          awk '
-            /^[[:space:]]*uses:/ {
-              action = $0
-              sub(/^[[:space:]]*uses:[[:space:]]*/, "", action)
-              split(action, parts, "@")
-              version = parts[2]
-              sub(/[[:space:]].*$/, "", version)
-              if (length(version) != 40 || version !~ /^[0-9a-f]+$/ || action !~ /#[[:space:]]+v[0-9]/) {
-                print FILENAME ":" FNR ": action is not SHA-pinned with a version comment: " $0
-                failed = 1
-              }
-            }
-            END { exit failed }
-          ' .github/workflows/*.yml .gitea/workflows/*.yml .gitea/workflows/*.yml .forgejo/workflows/*.yml
+          set -euo pipefail
+          fail=0
+          while IFS= read -r line; do
+            ref=$(printf '%s' "$line" | sed -E 's/.*uses:[[:space:]]*([^[:space:]#]+).*/\1/')
+            case "$ref" in
+              ./*) continue ;;
+              */*@*)
+                sha=${ref#*@}
+                if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{40}$' || ! printf '%s' "$line" | grep -qE '#[[:space:]]+v[0-9]'; then
+                  echo "::error::UNPINNED: $line"
+                  fail=1
+                fi
+                ;;
+              *)
+                echo "::error::INVALID ACTION REFERENCE: $line"
+                fail=1
+                ;;
+            esac
+          done < <(grep -rhnE '^[[:space:]]*-?[[:space:]]*uses:' .github/workflows/ .gitea/workflows/ .forgejo/workflows/ 2>/dev/null || true)
+          if grep -RqnE '^[[:space:]]*pull_request_target:' .github/workflows/ .gitea/workflows/ .forgejo/workflows/; then
+            echo '::error::pull_request_target is forbidden for untrusted workflows'
+            fail=1
+          fi
+          if [ "$fail" -ne 0 ]; then exit 1; fi
+          echo 'OK: third-party actions are SHA-pinned and pull_request_target is absent'
 
   image-scan:
     runs-on: ubuntu-26.04

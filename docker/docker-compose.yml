@@ -1,30 +1,58 @@
+# nginx proxy address - http://172.17.0.1:64580
+# casspeed - self-hosted speed test server
+
 name: casspeed
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "1"
 
 services:
   casspeed:
     image: ghcr.io/casapps/casspeed:latest
-    container_name: casspeed
-    restart: unless-stopped
+    container_name: casspeed-app
+    hostname: casspeed
+    restart: always
+    pull_policy: always
+    logging: *default-logging
     environment:
-      # Production: strict security, minimal logging, caching enabled
-      # NO debug options - debug must be explicitly set via CLI if needed
-      - MODE=production
-      - TZ=America/New_York
-      # DOMAIN (optional - auto-detects from reverse proxy headers)
-      # - DOMAIN=myapp.com,www.myapp.com
-      # SMTP (optional - autodetects if not set)
-      # - SMTP_HOST=smtp.example.com
-      # - SMTP_PORT=587
-      # - SMTP_USERNAME=user
-      # - SMTP_PASSWORD=pass
-    ports:
-      # Production: bound to Docker bridge only (reverse proxy handles external)
-      - "172.17.0.1:64580:80"
+      PORT: 80
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: casspeed-app
+      CACHE_URL: valkey://casspeed-cache:6379
     volumes:
-      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
-      # NEVER run from project directory - always use temp dir workflow
-      - ./rootfs/config:/config:z
-      - ./rootfs/data:/data:z
+      - ./volumes/config:/config:z
+      - ./volumes/data:/data:z
+    ports:
+      - "172.17.0.1:64580:80"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casspeed", "--status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      casspeed-cache:
+        condition: service_healthy
+    networks:
+      - casspeed
+
+  casspeed-cache:
+    image: valkey/valkey:alpine
+    container_name: casspeed-cache
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    volumes:
+      - ./volumes/data/db/valkey:/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - casspeed
 

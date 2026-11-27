@@ -151,6 +151,9 @@ func (s *Service) extractArchive(srcFile, destDir string) error {
 		if err != nil {
 			return err
 		}
+		if !filepath.IsLocal(header.Name) {
+			return fmt.Errorf("unsafe archive path: %q", header.Name)
+		}
 
 		path := filepath.Join(destDir, header.Name)
 
@@ -160,7 +163,8 @@ func (s *Service) extractArchive(srcFile, destDir string) error {
 		}
 
 		// Extract file
-		f, err := os.Create(path)
+		mode := os.FileMode(header.Mode)&0100 | 0600
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 		if err != nil {
 			return err
 		}

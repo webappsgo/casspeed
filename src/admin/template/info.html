@@ -1,99 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server Info - Admin</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #0f0f23;
-        color: #e8e8e8;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      .header {
-        background: #1a1a2e;
-        padding: 1rem 2rem;
-        border-bottom: 1px solid #2a2a3e;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .header h1 { font-size: 1.5em; color: #667eea; }
-      .main { display: flex; flex: 1; }
-      .sidebar {
-        width: 250px;
-        background: #16213e;
-        padding: 2rem 1rem;
-        border-right: 1px solid #2a2a3e;
-      }
-      .nav-item {
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-      .nav-item:hover { background: #1a1a2e; }
-      .nav-item.active { background: #667eea; }
-      .content { flex: 1; padding: 2rem; max-width: 1200px; }
-      .card {
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 2rem;
-        margin-bottom: 2rem;
-      }
-      .card h2 { margin-bottom: 1rem; color: #667eea; }
-      .info-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid #2a2a3e;
-      }
-      .info-label { color: #aaa; }
-      .info-value { color: #e8e8e8; font-weight: 500; }
-    </style>
-  </head>
-  <body>
-    <div class="header">
-      <h1>🚀 casspeed Admin</h1>
-      <div><a href="/admin/logout" style="color: #667eea;">Logout</a></div>
-    </div>
-    <div class="main">
-      <nav class="sidebar">
-        <div class="nav-item"><a href="/admin/dashboard">📊 Dashboard</a></div>
-        <div class="nav-item"><a href="/admin/server/settings">⚙️ Server Settings</a></div>
-        <div class="nav-item"><a href="/admin/server/logs">📝 Logs</a></div>
-        <div class="nav-item active">ℹ️ Server Info</div>
-      </nav>
-      <div class="content">
-        <div class="card">
-          <h2>Server Information</h2>
-          <div class="info-row">
-            <span class="info-label">Version</span>
-            <span class="info-value">0.1.0</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Mode</span>
-            <span class="info-value">development</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Go Version</span>
-            <span class="info-value">1.25.3</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Platform</span>
-            <span class="info-value">linux/amd64</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Uptime</span>
-            <span class="info-value">5d 12h 34m</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </body>
+<!doctype html>
+<html lang="{{.Lang}}" dir="{{.Direction}}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{t "admin.legacy.server_information"}} — CasSpeed {{t "admin.legacy.brand"}}</title>
+	<link rel="stylesheet" href="/static/css/theme-dark.css">
+	<link rel="stylesheet" href="/static/css/theme-light.css">
+	<link rel="stylesheet" href="/static/css/style.css">
+	<link rel="stylesheet" href="/static/css/admin/style.css">
+	<script src="/static/js/theme.js" defer></script>
+</head>
+<body>
+	<a class="skip-link" href="#main-content">{{t "admin.legacy.skip_content"}}</a>
+	<a class="skip-link" href="#admin-navigation">{{t "admin.legacy.skip_navigation"}}</a>
+	<header class="admin-header"><a href="{{.AdminRoot}}/">CasSpeed {{t "admin.legacy.brand"}}</a></header>
+	<div class="admin-layout">
+		<nav id="admin-navigation" class="admin-nav" aria-label="{{t "admin.legacy.navigation"}}">
+			<ul><li><a href="{{.AdminRoot}}/">{{t "admin.legacy.dashboard"}}</a></li><li><a href="{{.AdminRoot}}/settings">{{t "admin.legacy.settings"}}</a></li><li><a aria-current="page" href="{{.AdminRoot}}/info">{{t "admin.legacy.server_information"}}</a></li><li><a href="{{.AdminRoot}}/logs">{{t "admin.legacy.logs"}}</a></li></ul>
+			<form action="/server/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit">{{t "admin.legacy.log_out"}}</button></form>
+		</nav>
+		<main id="main-content" class="admin-content">
+			<header class="page-header"><h1 class="page-title">{{t "admin.legacy.server_information"}}</h1></header>
+			<section class="section-card" aria-labelledby="server-info-heading">
+				<h2 id="server-info-heading">{{t "admin.legacy.runtime"}}</h2>
+				<dl class="health-details"><dt>{{t "admin.legacy.version"}}</dt><dd>{{.Version}}</dd><dt>{{t "admin.legacy.mode"}}</dt><dd>{{.ModeLabel}}</dd><dt>{{t "admin.legacy.go_version"}}</dt><dd>{{.GoVersion}}</dd><dt>{{t "admin.legacy.platform"}}</dt><dd>{{.Platform}}</dd><dt>{{t "admin.legacy.uptime"}}</dt><dd>{{.Uptime}}</dd></dl>
+			</section>
+		</main>
+	</div>
+	<footer class="site-footer">CasSpeed {{t "admin.legacy.brand"}}</footer>
+</body>
 </html>

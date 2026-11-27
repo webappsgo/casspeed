@@ -18,14 +18,20 @@ const shareCodeCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 // ---- GenerateShareCode tests ---------------------------------------------
 
 func TestGenerateShareCode_Length(t *testing.T) {
-	code := GenerateShareCode()
-	if len(code) != 10 {
-		t.Errorf("share code length = %d, want 10", len(code))
+	code, err := GenerateShareCode()
+	if err != nil {
+		t.Fatalf("GenerateShareCode: %v", err)
+	}
+	if len(code) != 8 {
+		t.Errorf("share code length = %d, want 8", len(code))
 	}
 }
 
 func TestGenerateShareCode_Charset(t *testing.T) {
-	code := GenerateShareCode()
+	code, err := GenerateShareCode()
+	if err != nil {
+		t.Fatalf("GenerateShareCode: %v", err)
+	}
 	for _, c := range code {
 		if !strings.ContainsRune(shareCodeCharset, c) {
 			t.Errorf("share code contains invalid character %q in %q", c, code)
@@ -38,7 +44,10 @@ func TestGenerateShareCode_Uniqueness(t *testing.T) {
 	// Generate enough codes that a collision would be astronomically unlikely
 	// if the generator is random, but would happen immediately if it is static.
 	for i := 0; i < 100; i++ {
-		code := GenerateShareCode()
+		code, err := GenerateShareCode()
+		if err != nil {
+			t.Fatalf("GenerateShareCode: %v", err)
+		}
 		if _, dup := seen[code]; dup {
 			t.Errorf("duplicate share code %q at iteration %d", code, i)
 		}
@@ -126,30 +135,6 @@ func TestNewSpeedTestService(t *testing.T) {
 	}
 	if svc.chunkSize != 1024 {
 		t.Errorf("chunkSize = %d, want 1024", svc.chunkSize)
-	}
-}
-
-// ---- RunTest with 1-second duration (integration smoke test) ------------
-
-func TestRunTest_ShortDuration(t *testing.T) {
-	svc := NewSpeedTestService(2, 65536)
-	progressChan := make(chan ProgressUpdate, 100)
-
-	result, err := svc.RunTest(1, progressChan)
-	if err != nil {
-		t.Fatalf("RunTest returned error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("RunTest returned nil result")
-	}
-	if result.DownloadMbps < 0 {
-		t.Errorf("download speed should be non-negative, got %f", result.DownloadMbps)
-	}
-	if result.UploadMbps < 0 {
-		t.Errorf("upload speed should be non-negative, got %f", result.UploadMbps)
-	}
-	if result.PingMs < 0 {
-		t.Errorf("ping should be non-negative, got %f", result.PingMs)
 	}
 }
 

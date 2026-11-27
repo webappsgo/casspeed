@@ -1,29 +1,63 @@
-name: casspeed-dev
+# nginx proxy address - http://172.17.0.1:64580
+# casspeed - development server
+
+name: casspeed
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "1"
 
 services:
   casspeed:
-    image: ghcr.io/casapps/casspeed:latest
-    container_name: casspeed-dev
-    restart: unless-stopped
+    image: ghcr.io/casapps/casspeed:devel
+    container_name: casspeed-app
+    hostname: casspeed
+    restart: always
+    pull_policy: always
+    logging: *default-logging
     environment:
-      # Development: relaxed security, verbose logging, no caching
-      # Does NOT enable debug endpoints - uncomment DEBUG=true for that
-      - MODE=development
-      - TZ=America/New_York
-      # DEBUG: Uncomment to enable pprof, expvar, detailed request logging
-      # - DEBUG=true
-    ports:
-      # Development: accessible from all interfaces
-      - "64580:80"
+      MODE: development
+      PORT: 80
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: casspeed-app
+      CACHE_URL: valkey://casspeed-cache:6379
     volumes:
-      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
-      # NEVER run from project directory - always use temp dir workflow
-      - ./rootfs/config:/config
-      - ./rootfs/data:/data
+      - ./volumes/config:/config:z
+      - ./volumes/data:/data:z
+    ports:
+      - "172.17.0.1:64580:80"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casspeed", "--status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      casspeed-cache:
+        condition: service_healthy
     networks:
-      - casspeed-dev
+      - casspeed
+
+  casspeed-cache:
+    image: valkey/valkey:alpine
+    container_name: casspeed-cache
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    volumes:
+      - ./volumes/data/db/valkey:/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - casspeed
 
 networks:
-  casspeed-dev:
-    name: casspeed-dev
+  casspeed:
+    name: casspeed
     external: false

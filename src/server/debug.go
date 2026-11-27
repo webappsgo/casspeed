@@ -22,6 +22,7 @@ func (s *Server) registerDebugRoutes(r chi.Router) {
 	}
 
 	r.Route("/debug", func(r chi.Router) {
+		r.Use(s.requireOperatorDebug)
 		// pprof endpoints
 		r.HandleFunc("/pprof/", pprof.Index)
 		r.HandleFunc("/pprof/cmdline", pprof.Cmdline)
@@ -107,10 +108,11 @@ func (s *Server) handleDebugGoroutines(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf[:n])
 }
 
-// handleDebugCache returns cache statistics (placeholder until PART 9 cache is wired).
+// handleDebugCache reports that this service does not retain a process cache.
 func (s *Server) handleDebugCache(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]any{
-		"note": "cache not yet initialized",
+		"enabled": false,
+		"entries": 0,
 	})
 }
 
@@ -135,9 +137,11 @@ func (s *Server) handleDebugDB(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDebugScheduler returns scheduler task status (placeholder until PART 12 scheduler is wired).
+// handleDebugScheduler returns registered scheduler task state.
 func (s *Server) handleDebugScheduler(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]any{
-		"note": "scheduler not yet initialized",
-	})
+	if s.Scheduler == nil {
+		respondError(w, http.StatusServiceUnavailable, "Scheduler is unavailable")
+		return
+	}
+	respondJSON(w, http.StatusOK, s.Scheduler.GetStatus())
 }

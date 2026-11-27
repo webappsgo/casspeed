@@ -1,0 +1,30 @@
+.graphiql-container {
+  min-height: 38rem;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.graphiql-container .graphiql-sessions,
+.graphiql-container .graphiql-sidebar,
+.graphiql-container .graphiql-dialog {
+  color: var(--fg);
+  background: var(--bg-elevated);
+}
+
+.graphiql-container button,
+.graphiql-container input,
+.graphiql-container textarea,
+.graphiql-container select {
+  color: var(--fg);
+  background-color: var(--bg-elevated);
+  border-color: var(--border-strong);
+}
+
+.graphiql-container button:hover,
+.graphiql-container button:focus-visible {
+  outline-color: var(--accent);
+}
+
+.graphiql-container .graphiql-editor {
+  color: var(--fg);
+}

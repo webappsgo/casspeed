@@ -1,39 +1,39 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="{{.Lang}}" dir="{{.Dir}}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="casspeed — test your internet connection speed privately. No accounts required.">
-  <title>casspeed — Speed Test</title>
+  <meta name="description" content="{{t "description"}}">
+  <title>{{t "document_title"}}</title>
 
   <!-- Theme tokens (dark default, light alternate, auto via media query) -->
-  <link rel="stylesheet" href="/static/css/theme-dark.css">
-  <link rel="stylesheet" href="/static/css/theme-light.css">
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="{{.BasePath}}/static/css/theme-dark.css">
+  <link rel="stylesheet" href="{{.BasePath}}/static/css/theme-light.css">
+  <link rel="stylesheet" href="{{.BasePath}}/static/css/style.css">
 
   <!-- Apply stored theme preference before paint to prevent flash -->
-  <script src="/static/js/theme.js"></script>
+  <script src="{{.BasePath}}/static/js/theme.js"></script>
 </head>
-<body>
+<body data-base-path="{{.BasePath}}" data-api-base="{{.APIBase}}">
 
   <!-- Skip to main content for keyboard users -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <a href="#main-content" class="skip-link">{{t "skip_to_content"}}</a>
 
   <!-- ── Site header ──────────────────────────────────────────────── -->
   <header class="site-header" role="banner">
-    <a href="/" class="site-header__brand" aria-label="casspeed home">
+    <a href="{{.BasePath}}/" class="site-header__brand" aria-label="{{t "brand"}}">
       <span class="site-header__logo" aria-hidden="true">casspeed</span>
     </a>
 
     <div class="site-header__actions">
       <!-- Theme toggle -->
-      <div class="theme-toggle" role="group" aria-label="Color theme">
+      <div class="theme-toggle" role="group" aria-label="{{t "color_theme"}}">
         <button
           class="theme-toggle__btn"
           data-theme-btn="dark"
           aria-pressed="true"
-          aria-label="Dark theme"
-          title="Dark theme"
+          aria-label="{{t "theme_dark"}}"
+          title="{{t "theme_dark"}}"
           type="button">
           ◐
         </button>
@@ -41,8 +41,8 @@
           class="theme-toggle__btn"
           data-theme-btn="light"
           aria-pressed="false"
-          aria-label="Light theme"
-          title="Light theme"
+          aria-label="{{t "theme_light"}}"
+          title="{{t "theme_light"}}"
           type="button">
           ◑
         </button>
@@ -50,29 +50,25 @@
           class="theme-toggle__btn"
           data-theme-btn="auto"
           aria-pressed="false"
-          aria-label="Auto theme (follows system)"
-          title="Auto (system)"
+          aria-label="{{t "theme_auto"}}"
+          title="{{t "theme_auto_system"}}"
           type="button">
           ◎
         </button>
       </div>
 
-      <!-- Auth links (visible on tablet+) -->
-      <nav class="header-auth" aria-label="Account">
-        <a href="/server/admin/" class="btn-link">Admin</a>
-      </nav>
     </div>
   </header>
 
   <!-- ── Main content ─────────────────────────────────────────────── -->
-  <main id="main-content" class="site-main" aria-label="Speed test">
+  <main id="main-content" class="site-main" aria-label="{{t "main"}}">
 
-    <div class="speed-test" role="region" aria-label="Speed test interface">
+    <div class="speed-test" role="region" aria-label="{{t "interface"}}">
 
       <!-- Heading -->
-      <div style="text-align:center">
-        <h1 class="speed-test__title">Test Your Speed</h1>
-        <p class="speed-test__subtitle">Self-hosted, private, no trackers</p>
+      <div class="speed-test__heading">
+        <h1 class="speed-test__title">{{t "title"}}</h1>
+        <p class="speed-test__subtitle">{{t "subtitle"}}</p>
       </div>
 
       <!-- ── Gauge / live display ────────────────────────────────── -->
@@ -96,17 +92,17 @@
             d="M 20,130 A 100,100 0 0,1 220,130"
           />
           <!-- Value text -->
-          <text id="gaugeValue" class="gauge__value" x="120" y="108" aria-label="current speed">--</text>
+          <text id="gaugeValue" class="gauge__value" x="120" y="108" aria-label="{{t "current_speed"}}">--</text>
           <text id="gaugeUnitText" class="gauge__unit" x="120" y="124">Mbps</text>
-          <text id="gaugeLabelText" class="gauge__label" x="120" y="137">Speed</text>
+          <text id="gaugeLabelText" class="gauge__label" x="120" y="137">{{t "speed"}}</text>
         </svg>
       </div>
 
       <!-- Live speed number (screen-reader accessible) -->
       <div class="live-speed" aria-live="polite" aria-atomic="true">
-        <div id="liveNumber" class="live-speed__number" aria-label="Current speed">--</div>
+        <div id="liveNumber" class="live-speed__number" aria-label="{{t "current_speed"}}">--</div>
         <div id="liveUnit"   class="live-speed__unit">Mbps</div>
-        <div id="liveStage"  class="live-speed__stage" aria-label="Current test phase">&nbsp;</div>
+        <div id="liveStage"  class="live-speed__stage" aria-label="{{t "current_phase"}}">&nbsp;</div>
       </div>
 
       <!-- ── START button ────────────────────────────────────────── -->
@@ -114,8 +110,8 @@
         id="startBtn"
         class="start-btn start-btn--idle"
         type="button"
-        aria-label="Start speed test">
-        START
+        aria-label="{{t "start_aria"}}">
+        {{t "start"}}
       </button>
 
       <!-- Test Again button (hidden until test completes) -->
@@ -123,24 +119,24 @@
         id="testAgainBtn"
         class="test-again-btn"
         type="button"
-        style="display:none"
-        aria-label="Run another speed test">
-        Test Again
+        hidden
+        aria-label="{{t "test_again_aria"}}">
+        {{t "test_again"}}
       </button>
 
       <!-- ── Progress section ─────────────────────────────────────── -->
       <section
         id="progressSection"
         class="progress-section"
-        aria-label="Test progress"
+        aria-label="{{t "progress"}}"
         aria-live="polite">
 
         <div class="progress-label">
-          <span id="progressStage" class="progress-stage" aria-live="polite">Connecting</span>
-          <span id="progressPct"   class="progress-pct"   aria-label="Percent complete">0%</span>
+          <span id="progressStage" class="progress-stage" aria-live="polite">{{t "connecting"}}</span>
+          <span id="progressPct"   class="progress-pct"   aria-label="{{t "percent_complete"}}">0%</span>
         </div>
 
-        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Overall test progress" id="progressBar">
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{{t "overall_progress"}}" id="progressBar">
           <div id="progressFill" class="progress-fill"></div>
         </div>
 
@@ -148,15 +144,15 @@
         <div class="phase-steps" aria-hidden="true">
           <div class="phase-step" data-phase="ping">
             <div class="phase-step__dot"></div>
-            <span class="phase-step__name">Ping</span>
+            <span class="phase-step__name">{{t "ping"}}</span>
           </div>
           <div class="phase-step" data-phase="download">
             <div class="phase-step__dot"></div>
-            <span class="phase-step__name">Download</span>
+            <span class="phase-step__name">{{t "download"}}</span>
           </div>
           <div class="phase-step" data-phase="upload">
             <div class="phase-step__dot"></div>
-            <span class="phase-step__name">Upload</span>
+            <span class="phase-step__name">{{t "upload"}}</span>
           </div>
         </div>
       </section>
@@ -168,21 +164,21 @@
       <section
         id="resultsSection"
         class="results-section"
-        aria-label="Test results"
+        aria-label="{{t "results"}}"
         aria-live="polite">
 
         <!-- Primary: download + upload -->
         <div class="result-primary">
           <div class="result-card result-card--download">
             <span class="result-card__icon" aria-hidden="true">↓</span>
-            <div class="result-card__label">Download</div>
-            <div id="dlValue" class="result-card__value" aria-label="Download speed">--</div>
+            <div class="result-card__label">{{t "download"}}</div>
+            <div id="dlValue" class="result-card__value" aria-label="{{t "download_speed"}}">--</div>
             <div class="result-card__unit">Mbps</div>
           </div>
           <div class="result-card result-card--upload">
             <span class="result-card__icon" aria-hidden="true">↑</span>
-            <div class="result-card__label">Upload</div>
-            <div id="ulValue" class="result-card__value" aria-label="Upload speed">--</div>
+            <div class="result-card__label">{{t "upload"}}</div>
+            <div id="ulValue" class="result-card__value" aria-label="{{t "upload_speed"}}">--</div>
             <div class="result-card__unit">Mbps</div>
           </div>
         </div>
@@ -190,18 +186,18 @@
         <!-- Secondary: ping, jitter, packet loss -->
         <div class="result-secondary">
           <div class="result-card result-card--sm result-card--ping">
-            <div class="result-card__label">Ping</div>
-            <div id="pingValue" class="result-card__value" aria-label="Ping latency">--</div>
+            <div class="result-card__label">{{t "ping"}}</div>
+            <div id="pingValue" class="result-card__value" aria-label="{{t "ping_latency"}}">--</div>
             <div class="result-card__unit">ms</div>
           </div>
           <div class="result-card result-card--sm result-card--jitter">
-            <div class="result-card__label">Jitter</div>
-            <div id="jitterValue" class="result-card__value" aria-label="Jitter">--</div>
+            <div class="result-card__label">{{t "jitter"}}</div>
+            <div id="jitterValue" class="result-card__value" aria-label="{{t "jitter"}}">--</div>
             <div class="result-card__unit">ms</div>
           </div>
           <div class="result-card result-card--sm result-card--loss">
-            <div class="result-card__label">Packet loss</div>
-            <div id="lossValue" class="result-card__value" aria-label="Packet loss">--</div>
+            <div class="result-card__label">{{t "packet_loss"}}</div>
+            <div id="lossValue" class="result-card__value" aria-label="{{t "packet_loss"}}">--</div>
           </div>
         </div>
 
@@ -211,24 +207,27 @@
       <section
         id="shareSection"
         class="share-section"
-        aria-label="Share result">
+        aria-label="{{t "share_result"}}">
 
-        <p class="share-section__title">Share your result</p>
+        <p class="share-section__title">{{t "share_your_result"}}</p>
 
-        <div class="share-url" role="group" aria-label="Share URL">
+        <button id="shareCreateBtn" class="share-url__copy" type="button">{{t "create_share_link"}}</button>
+
+        <div class="share-url" role="group" aria-label="{{t "share_url"}}">
           <input
             id="shareInput"
             class="share-url__input share-code"
             type="text"
             readonly
-            aria-label="Shareable result URL"
-            placeholder="Share link will appear here…">
+            aria-label="{{t "shareable_result_url"}}"
+            placeholder="{{t "share_placeholder"}}">
           <button
             id="shareCopyBtn"
             class="share-url__copy"
             type="button"
-            aria-label="Copy share link to clipboard">
-            Copy
+            hidden
+            aria-label="{{t "copy_share_link"}}">
+            {{t "copy"}}
           </button>
         </div>
 
@@ -238,13 +237,10 @@
       <!-- Progressive enhancement: shown when JS is unavailable     -->
       <noscript>
         <div class="nojs-fallback" id="noJsFallback">
-          <p>JavaScript is required for the real-time speed test.</p>
-          <p>Enable JavaScript in your browser to run a test, or use the REST API at <code>/api/v1/speed-tests</code>.</p>
+          <p>{{t "nojs_required"}}</p>
+          <p>{{t "nojs_message"}} <code>{{.APIBase}}/speed-tests</code>.</p>
         </div>
       </noscript>
-      <!-- JS hides this element; noscript keeps it visible without JS -->
-      <div id="noJsFallback" class="nojs-fallback" aria-hidden="true"></div>
-
     </div><!-- /.speed-test -->
 
   </main>
@@ -252,9 +248,13 @@
   <!-- ── Site footer ─────────────────────────────────────────────── -->
   <footer class="site-footer" role="contentinfo">
     <p>
-      <a href="/server/admin/" aria-label="Admin panel">Admin</a>
+      <a href="{{.BasePath}}/server/about">{{t "about"}}</a>
       &middot;
-      <a href="/openapi" aria-label="API documentation">API</a>
+      <a href="{{.BasePath}}/server/privacy">{{t "privacy"}}</a>
+      &middot;
+      <a href="{{.BasePath}}/server/help">{{t "help"}}</a>
+      &middot;
+      <a href="{{.BasePath}}/server/preferences#language">{{t "preferences"}}</a>
       &middot;
       <span class="text-subtle">casspeed</span>
     </p>
@@ -264,7 +264,8 @@
   <div id="toastContainer" class="toast-container" aria-live="assertive" aria-atomic="false" role="status"></div>
 
   <!-- ── App JS ──────────────────────────────────────────────────── -->
-  <script src="/static/js/app.js"></script>
+  <script id="home-translations" type="application/json">{{.Translations}}</script>
+  <script src="{{.BasePath}}/static/js/app.js"></script>
 
 </body>
 </html>

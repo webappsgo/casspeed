@@ -39,7 +39,7 @@ jobs:
       - name: Log in to Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
-          registry: ${{ forgejo.server_url }}
+          registry: ${{ env.REGISTRY }}
           username: ${{ forgejo.actor }}
           password: ${{ secrets.FORGEJO_TOKEN }}
 
@@ -84,6 +84,48 @@ jobs:
 
           echo "tags=$TAGS" >> $FORGEJO_OUTPUT
 
+      - name: Docker metadata (standard)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ env.COMMIT_ID }}
+          labels: |
+            maintainer=casapps
+            org.opencontainers.image.vendor=casapps
+            org.opencontainers.image.authors=casapps
+            org.opencontainers.image.title=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - standard image (alpine)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.schema-version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
+            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.vcs-type=Git
+            com.forgejo.containers.toolbox=false
+          annotations: |
+            org.opencontainers.image.vendor=casapps
+            org.opencontainers.image.authors=casapps
+            maintainer=casapps
+            org.opencontainers.image.title=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - standard image (alpine)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.schema-version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
+            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.vcs-type=Git
+            com.forgejo.containers.toolbox=false
+
       - name: Build and push (standard)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
@@ -99,32 +141,62 @@ jobs:
             BUILD_EPOCH=${{ env.BUILD_EPOCH }}
             COMMIT_ID=${{ env.COMMIT_ID }}
             OFFICIAL_SITE=${{ env.OFFICIAL_SITE }}
-          labels: |
-            org.opencontainers.image.vendor=webappsgo
-            org.opencontainers.image.authors=webappsgo
-            org.opencontainers.image.title=${{ env.PROJECT_NAME }}
-            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
-            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - standard image (alpine)
-            org.opencontainers.image.version=${{ env.VERSION }}
-            org.opencontainers.image.created=${{ env.BUILD_DATE }}
-            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
-            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.licenses=MIT
-          annotations: |
-            manifest:org.opencontainers.image.vendor=webappsgo
-            manifest:org.opencontainers.image.authors=webappsgo
-            manifest:org.opencontainers.image.title=${{ env.PROJECT_NAME }}
-            manifest:org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
-            manifest:org.opencontainers.image.description=${{ env.PROJECT_NAME }} - standard image (alpine)
-            manifest:org.opencontainers.image.version=${{ env.VERSION }}
-            manifest:org.opencontainers.image.created=${{ env.BUILD_DATE }}
-            manifest:org.opencontainers.image.revision=${{ env.COMMIT_ID }}
-            manifest:org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.licenses=MIT
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+
+      - name: Verify standard image contract
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.COMMIT_ID }}
+          REQUIRE_OVERLAY: ${{ vars.REQUIRE_OVERLAY || '0' }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker run --rm --entrypoint sh "$IMAGE" -c 'for c in bash curl tor i2pd tini; do command -v "$c" || exit 1; done'
+          mkdir -p "${TMPDIR:-/tmp}/casapps"
+          TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/casapps/casspeed-XXXXXX")
+          chmod 700 "$TEST_DIR"
+          mkdir -p "$TEST_DIR/config" "$TEST_DIR/data"
+          CONTAINER_NAME="casspeed-contract-${FORGEJO_RUN_ID}"
+          cleanup() {
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+            rm -rf -- "$TEST_DIR"
+          }
+          trap cleanup EXIT INT TERM
+          docker run -d --name "$CONTAINER_NAME" -p 127.0.0.1::80 \
+            -e LISTEN=0.0.0.0 -e PORT=80 \
+            -v "$TEST_DIR/config:/config" -v "$TEST_DIR/data:/data" "$IMAGE"
+          PORT=$(docker port "$CONTAINER_NAME" 80/tcp | sed -E 's|.*:||')
+          STATE=
+          for attempt in $(seq 1 180); do
+            if ! docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" | grep -qx true; then
+              docker logs "$CONTAINER_NAME"
+              exit 1
+            fi
+            BODY=$(curl -q -fsS --max-time 3 -H 'Accept: application/json' "http://127.0.0.1:${PORT}/server/healthz" 2>/dev/null || true)
+            STATE=$(printf '%s' "$BODY" | sed -n 's/.*"tor":{[^}]*"status":"\([^"]*\)".*/\1/p')
+            case "$STATE" in
+              healthy) break ;;
+              error) docker logs "$CONTAINER_NAME"; exit 1 ;;
+              starting|unavailable|'') sleep 1 ;;
+              *) docker logs "$CONTAINER_NAME"; exit 1 ;;
+            esac
+          done
+          if [ "$STATE" != healthy ]; then
+            if [ "$REQUIRE_OVERLAY" = 1 ]; then
+              docker logs "$CONTAINER_NAME"
+              echo "ERROR: Tor did not become healthy within 180 seconds" >&2
+              exit 1
+            fi
+            if curl -q -fsS --connect-timeout 5 --max-time 8 https://example.com/ >/dev/null 2>&1; then
+              docker logs "$CONTAINER_NAME"
+              echo "ERROR: outbound network is available but Tor did not become healthy (status: ${STATE:-unknown})" >&2
+              exit 1
+            fi
+            case "$STATE" in
+              starting|unavailable) echo "SKIP: no outbound network" >&2 ;;
+              *) docker logs "$CONTAINER_NAME"; echo "ERROR: no valid Tor status from /server/healthz" >&2; exit 1 ;;
+            esac
+          fi
 
   build-devel:
     runs-on: ubuntu-26.04
@@ -145,7 +217,7 @@ jobs:
       - name: Log in to Container Registry
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4.8.0
         with:
-          registry: ${{ forgejo.server_url }}
+          registry: ${{ env.REGISTRY }}
           username: ${{ forgejo.actor }}
           password: ${{ secrets.FORGEJO_TOKEN }}
 
@@ -164,6 +236,48 @@ jobs:
           echo "BUILD_EPOCH=$BUILD_EPOCH" >> $FORGEJO_ENV
           echo "BUILD_DATE=$(date -u -d @$BUILD_EPOCH +"%Y-%m-%dT%H:%M:%SZ")" >> $FORGEJO_ENV
 
+      - name: Docker metadata (devel)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=devel
+          labels: |
+            maintainer=casapps
+            org.opencontainers.image.vendor=casapps
+            org.opencontainers.image.authors=casapps
+            org.opencontainers.image.title=${{ env.PROJECT_NAME }}-devel
+            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - development image (alpine, debug mode)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+            org.opencontainers.image.version=${{ env.COMMIT_ID }}
+            org.opencontainers.image.schema-version=${{ env.COMMIT_ID }}
+            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
+            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.vcs-type=Git
+            com.forgejo.containers.toolbox=false
+          annotations: |
+            org.opencontainers.image.vendor=casapps
+            org.opencontainers.image.authors=casapps
+            maintainer=casapps
+            org.opencontainers.image.title=${{ env.PROJECT_NAME }}-devel
+            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
+            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - development image (alpine, debug mode)
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+            org.opencontainers.image.version=${{ env.COMMIT_ID }}
+            org.opencontainers.image.schema-version=${{ env.COMMIT_ID }}
+            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
+            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
+            org.opencontainers.image.vcs-type=Git
+            com.forgejo.containers.toolbox=false
+
       - name: Build and push (devel)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
@@ -179,29 +293,59 @@ jobs:
             BUILD_EPOCH=${{ env.BUILD_EPOCH }}
             COMMIT_ID=${{ env.COMMIT_ID }}
             OFFICIAL_SITE=${{ env.OFFICIAL_SITE }}
-          labels: |
-            org.opencontainers.image.vendor=webappsgo
-            org.opencontainers.image.authors=webappsgo
-            org.opencontainers.image.title=${{ env.PROJECT_NAME }}-devel
-            org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
-            org.opencontainers.image.description=${{ env.PROJECT_NAME }} - development image (alpine, debug mode)
-            org.opencontainers.image.version=${{ env.COMMIT_ID }}
-            org.opencontainers.image.created=${{ env.BUILD_DATE }}
-            org.opencontainers.image.revision=${{ env.COMMIT_ID }}
-            org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            org.opencontainers.image.licenses=MIT
-          annotations: |
-            manifest:org.opencontainers.image.vendor=webappsgo
-            manifest:org.opencontainers.image.authors=webappsgo
-            manifest:org.opencontainers.image.title=${{ env.PROJECT_NAME }}-devel
-            manifest:org.opencontainers.image.base.name=${{ env.PROJECT_NAME }}
-            manifest:org.opencontainers.image.description=${{ env.PROJECT_NAME }} - development image (alpine, debug mode)
-            manifest:org.opencontainers.image.version=${{ env.COMMIT_ID }}
-            manifest:org.opencontainers.image.created=${{ env.BUILD_DATE }}
-            manifest:org.opencontainers.image.revision=${{ env.COMMIT_ID }}
-            manifest:org.opencontainers.image.url=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.source=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.documentation=${{ forgejo.server_url }}/${{ forgejo.repository }}
-            manifest:org.opencontainers.image.licenses=MIT
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+
+      - name: Verify devel image contract
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:devel
+          REQUIRE_OVERLAY: ${{ vars.REQUIRE_OVERLAY || '0' }}
+        run: |
+          set -euo pipefail
+          docker pull "$IMAGE"
+          docker run --rm --entrypoint sh "$IMAGE" -c 'for c in bash curl tor i2pd tini; do command -v "$c" || exit 1; done'
+          mkdir -p "${TMPDIR:-/tmp}/casapps"
+          TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/casapps/casspeed-XXXXXX")
+          chmod 700 "$TEST_DIR"
+          mkdir -p "$TEST_DIR/config" "$TEST_DIR/data"
+          CONTAINER_NAME="casspeed-contract-devel-${FORGEJO_RUN_ID}"
+          cleanup() {
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+            rm -rf -- "$TEST_DIR"
+          }
+          trap cleanup EXIT INT TERM
+          docker run -d --name "$CONTAINER_NAME" -p 127.0.0.1::80 \
+            -e LISTEN=0.0.0.0 -e PORT=80 \
+            -v "$TEST_DIR/config:/config" -v "$TEST_DIR/data:/data" "$IMAGE"
+          PORT=$(docker port "$CONTAINER_NAME" 80/tcp | sed -E 's|.*:||')
+          STATE=
+          for attempt in $(seq 1 180); do
+            if ! docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" | grep -qx true; then
+              docker logs "$CONTAINER_NAME"
+              exit 1
+            fi
+            BODY=$(curl -q -fsS --max-time 3 -H 'Accept: application/json' "http://127.0.0.1:${PORT}/server/healthz" 2>/dev/null || true)
+            STATE=$(printf '%s' "$BODY" | sed -n 's/.*"tor":{[^}]*"status":"\([^"]*\)".*/\1/p')
+            case "$STATE" in
+              healthy) break ;;
+              error) docker logs "$CONTAINER_NAME"; exit 1 ;;
+              starting|unavailable|'') sleep 1 ;;
+              *) docker logs "$CONTAINER_NAME"; exit 1 ;;
+            esac
+          done
+          if [ "$STATE" != healthy ]; then
+            if [ "$REQUIRE_OVERLAY" = 1 ]; then
+              docker logs "$CONTAINER_NAME"
+              echo "ERROR: Tor did not become healthy within 180 seconds" >&2
+              exit 1
+            fi
+            if curl -q -fsS --connect-timeout 5 --max-time 8 https://example.com/ >/dev/null 2>&1; then
+              docker logs "$CONTAINER_NAME"
+              echo "ERROR: outbound network is available but Tor did not become healthy (status: ${STATE:-unknown})" >&2
+              exit 1
+            fi
+            case "$STATE" in
+              starting|unavailable) echo "SKIP: no outbound network" >&2 ;;
+              *) docker logs "$CONTAINER_NAME"; echo "ERROR: no valid Tor status from /server/healthz" >&2; exit 1 ;;
+            esac
+          fi

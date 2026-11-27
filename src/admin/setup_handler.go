@@ -2,11 +2,13 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"html/template"
+	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/casapps/casspeed/src/server/model"
@@ -17,52 +19,65 @@ import (
 // SetupTokenHandler handles the setup token submission
 func (a *AdminHandler) SetupTokenHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, adminText(r, "error.method_not_allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Check if setup is already complete
 	if IsSetupComplete() {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		http.Redirect(w, r, a.adminRootPath(), http.StatusSeeOther)
 		return
 	}
 
 	// Parse form
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		http.Error(w, adminText(r, "setup.error.invalid_form"), http.StatusBadRequest)
 		return
 	}
 
 	token := r.FormValue("token")
 	if token == "" {
-		a.renderSetupTokenPage(w, r, "Setup token is required")
+		a.renderSetupTokenPage(w, r, adminText(r, "setup.error.token_required"))
 		return
 	}
 
 	// Validate token
 	if !ValidateSetupToken(token) {
-		a.renderSetupTokenPage(w, r, "Invalid setup token")
+		a.renderSetupTokenPage(w, r, adminText(r, "setup.error.token_invalid"))
+		return
+	}
+	if err := IssueSetupSession(w, r); err != nil {
+		http.Error(w, adminText(r, "setup.error.authorize"), http.StatusInternalServerError)
 		return
 	}
 
 	// Token valid - redirect to setup wizard
-	http.Redirect(w, r, "/admin/setup", http.StatusSeeOther)
+	http.Redirect(w, r, a.adminRootPath()+"/setup", http.StatusSeeOther)
 }
 
 // SetupWizardHandler handles the setup wizard page
 func (a *AdminHandler) SetupWizardHandler(w http.ResponseWriter, r *http.Request) {
 	// Check if setup is already complete
 	if IsSetupComplete() {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		http.Redirect(w, r, a.adminRootPath(), http.StatusSeeOther)
+		return
+	}
+	if !validSetupSession(r) {
+		a.renderSetupTokenPage(w, r, "")
 		return
 	}
 
 	themeVal := theme.DetectTheme(r)
 
+	catalog, language := adminLocale(r)
 	data := map[string]interface{}{
-		"Theme":    themeVal,
-		"ThemeCSS": theme.GetThemeCSS(themeVal),
-		"Step":     1,
+		"Theme":     themeVal,
+		"ThemeCSS":  theme.GetThemeCSS(themeVal),
+		"Step":      1,
+		"Lang":      language,
+		"Direction": catalog.Meta.Direction,
+		"AdminRoot": a.adminRootPath(),
+		"T":         func(key string) string { return catalog.T("admin.legacy."+key, nil) },
 	}
 
 	a.renderSetupWizard(w, data)
@@ -71,26 +86,30 @@ func (a *AdminHandler) SetupWizardHandler(w http.ResponseWriter, r *http.Request
 // SetupCompleteHandler handles the final step of setup wizard
 func (a *AdminHandler) SetupCompleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, adminText(r, "error.method_not_allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Check if setup is already complete
 	if IsSetupComplete() {
-		http.Error(w, "Setup already completed", http.StatusBadRequest)
+		http.Error(w, adminText(r, "setup.error.completed"), http.StatusBadRequest)
+		return
+	}
+	if !validSetupSession(r) {
+		http.Error(w, adminText(r, "setup.error.authorization_required"), http.StatusUnauthorized)
 		return
 	}
 
 	// Parse JSON body
 	var setupData SetupWizardData
 	if err := json.NewDecoder(r.Body).Decode(&setupData); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		http.Error(w, adminText(r, "setup.error.invalid_request"), http.StatusBadRequest)
 		return
 	}
 
 	// Validate data
 	if err := ValidateSetupData(&setupData); err != nil {
-		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
+		http.Error(w, setupValidationMessage(r, err), http.StatusBadRequest)
 		return
 	}
 
@@ -98,7 +117,7 @@ func (a *AdminHandler) SetupCompleteHandler(w http.ResponseWriter, r *http.Reque
 	if setupData.AdminAPIToken == "" {
 		token, err := generateAPIToken()
 		if err != nil {
-			http.Error(w, "Failed to generate API token", http.StatusInternalServerError)
+			http.Error(w, adminText(r, "setup.error.token_generation"), http.StatusInternalServerError)
 			return
 		}
 		setupData.AdminAPIToken = token
@@ -107,16 +126,15 @@ func (a *AdminHandler) SetupCompleteHandler(w http.ResponseWriter, r *http.Reque
 	// Hash admin password
 	passwordHash, err := hashPassword(setupData.AdminPassword)
 	if err != nil {
-		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		http.Error(w, adminText(r, "setup.error.password_hash"), http.StatusInternalServerError)
 		return
 	}
 
-	// Hash API token
-	tokenHash, err := hashPassword(setupData.AdminAPIToken)
-	if err != nil {
-		http.Error(w, "Failed to hash API token", http.StatusInternalServerError)
+	if !validAdminTokenFormat(setupData.AdminAPIToken) {
+		http.Error(w, adminText(r, "setup.error.token_format"), http.StatusBadRequest)
 		return
 	}
+	tokenHash := sha256.Sum256([]byte(setupData.AdminAPIToken))
 
 	// Create admin account in database
 	ctx := r.Context()
@@ -126,37 +144,37 @@ func (a *AdminHandler) SetupCompleteHandler(w http.ResponseWriter, r *http.Reque
 		Email:        "", // Optional, can be set later
 		Role:         "primary",
 		Enabled:      true,
-		APITokenHash: tokenHash,
+		APITokenHash: hex.EncodeToString(tokenHash[:]),
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
 
 	// Save admin to database
 	if err := a.store.CreateAdmin(ctx, adminAccount); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create admin account: %v", err), http.StatusInternalServerError)
+		http.Error(w, adminText(r, "setup.error.create_admin"), http.StatusInternalServerError)
 		return
 	}
-	
+
 	setupData.CompletedAt = time.Now()
 	setupData.CompletedByIP = getClientIP(r)
 
-	// Mark setup as complete in memory
-	MarkSetupComplete()
-	
 	// Save setup completion to database
 	if err := a.store.SetSetupComplete(ctx, true); err != nil {
-		http.Error(w, "Failed to save setup status", http.StatusInternalServerError)
+		http.Error(w, adminText(r, "setup.error.save_status"), http.StatusInternalServerError)
 		return
 	}
+	consumeSetupSession(r)
+	MarkSetupComplete()
+	http.SetCookie(w, &http.Cookie{Name: "casspeed_setup", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode})
 
-// Config saved via server.yml on first run - admin modifies via /admin/server/settings
+	// Config saved via server.yml on first run - admin modifies via /admin/server/settings
 	// This requires config package access
 
 	// Return success with API token
 	response := map[string]interface{}{
 		"success":   true,
 		"api_token": setupData.AdminAPIToken,
-		"message":   "Setup completed successfully",
+		"message":   adminText(r, "setup.completed_successfully"),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -168,11 +186,11 @@ func (a *AdminHandler) renderSetupTokenPage(w http.ResponseWriter, r *http.Reque
 	themeVal := theme.DetectTheme(r)
 
 	tmpl := `<!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}" dir="{{.Direction}}">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Setup - casspeed</title>
+	<title>{{t "setup.title"}} - casspeed</title>
 	<style>
 		{{.ThemeCSS}}
 		body {
@@ -243,32 +261,39 @@ func (a *AdminHandler) renderSetupTokenPage(w http.ResponseWriter, r *http.Reque
 </head>
 <body>
 	<div class="setup-card">
-		<h1>casspeed Setup</h1>
-		<p class="subtitle">Enter your setup token to begin</p>
+		<h1>casspeed {{t "setup.title"}}</h1>
+		<p class="subtitle">{{t "setup.token_lead"}}</p>
 		{{if .Error}}
 		<div class="error">{{.Error}}</div>
 		{{end}}
-		<form method="POST" action="/admin/setup/token">
-			<input type="text" name="token" placeholder="Setup Token" required autofocus>
-			<button type="submit">Continue</button>
+		<form method="POST" action="{{.AdminRoot}}/setup/token">
+			<input type="text" name="token" placeholder="{{t "setup.token_label"}}" required autofocus>
+			<button type="submit">{{t "setup.continue"}}</button>
 		</form>
 		<div class="version">v1.0.0</div>
 	</div>
 </body>
 </html>`
 
-	t, err := template.New("setup").Parse(tmpl)
+	catalog, language := adminLocale(r)
+	t, err := template.New("setup").Funcs(template.FuncMap{"t": func(key string) string { return catalog.T("admin.legacy."+key, nil) }}).Parse(tmpl)
 	if err != nil {
-		http.Error(w, "Template error", http.StatusInternalServerError)
+		http.Error(w, adminText(r, "setup.error.template"), http.StatusInternalServerError)
 		return
 	}
 
 	data := map[string]interface{}{
-		"ThemeCSS": theme.GetThemeCSS(themeVal),
-		"Error":    errorMsg,
+		"ThemeCSS":  theme.GetThemeCSS(themeVal),
+		"Error":     errorMsg,
+		"Lang":      language,
+		"Direction": catalog.Meta.Direction,
+		"AdminRoot": a.adminRootPath(),
 	}
 
-	t.Execute(w, data)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.Execute(w, data); err != nil {
+		return
+	}
 }
 
 // renderSetupWizard renders the setup wizard page
@@ -279,11 +304,11 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 	}
 
 	tmpl := `<!DOCTYPE html>
-<html lang="en">
+<html lang="{{.Lang}}" dir="{{.Direction}}">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Setup Wizard - casspeed</title>
+	<title>{{t "setup.wizard_title"}} - casspeed</title>
 	<style>
 		` + themeCSS + `
 		* { box-sizing: border-box; }
@@ -428,139 +453,138 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 <body>
 	<div class="wizard-container">
 		<div class="wizard-header">
-			<h1>casspeed Setup</h1>
-			<p>Complete the setup wizard to configure your server</p>
+			<h1>casspeed {{t "setup.title"}}</h1>
+			<p>{{t "setup.wizard_lead"}}</p>
 		</div>
 
 		<div class="wizard-steps">
 			<div class="step active" id="step-indicator-1">
 				<div class="step-number">1</div>
-				<div class="step-label">Admin</div>
+				<div class="step-label">{{t "setup.step_admin"}}</div>
 			</div>
 			<div class="step" id="step-indicator-2">
 				<div class="step-number">2</div>
-				<div class="step-label">API Token</div>
+				<div class="step-label">{{t "setup.step_api_token"}}</div>
 			</div>
 			<div class="step" id="step-indicator-3">
 				<div class="step-number">3</div>
-				<div class="step-label">Server</div>
+				<div class="step-label">{{t "setup.step_server"}}</div>
 			</div>
 			<div class="step" id="step-indicator-4">
 				<div class="step-number">4</div>
-				<div class="step-label">Security</div>
+				<div class="step-label">{{t "setup.step_security"}}</div>
 			</div>
 			<div class="step" id="step-indicator-5">
 				<div class="step-number">5</div>
-				<div class="step-label">Complete</div>
+				<div class="step-label">{{t "setup.step_complete"}}</div>
 			</div>
 		</div>
 
 		<div class="wizard-card">
 			<!-- Step 1: Admin Account -->
 			<div id="step-1" class="wizard-step">
-				<h2>Create Admin Account</h2>
-				<p>Set up your administrator credentials.</p>
+				<h2>{{t "setup.create_admin"}}</h2>
+				<p>{{t "setup.admin_lead"}}</p>
 				<div class="form-group">
-					<label for="admin_username">Username</label>
+					<label for="admin_username">{{t "setup.username"}}</label>
 					<input type="text" id="admin_username" name="admin_username" value="administrator" required>
-					<div class="form-hint">This username will be used to log in to the admin panel.</div>
+					<div class="form-hint">{{t "setup.username_hint"}}</div>
 				</div>
 				<div class="form-group">
-					<label for="admin_password">Password</label>
+					<label for="admin_password">{{t "setup.password"}}</label>
 					<input type="password" id="admin_password" name="admin_password" required minlength="8">
-					<div class="form-hint">Minimum 8 characters. Use a strong, unique password.</div>
+					<div class="form-hint">{{t "setup.password_hint"}}</div>
 				</div>
 				<div class="form-group">
-					<label for="admin_password_confirm">Confirm Password</label>
+					<label for="admin_password_confirm">{{t "setup.confirm_password"}}</label>
 					<input type="password" id="admin_password_confirm" name="admin_password_confirm" required>
 				</div>
 				<div class="btn-group">
-					<button type="button" class="btn btn-primary" onclick="nextStep(1)">Next</button>
+					<button type="button" class="btn btn-primary" onclick="nextStep(1)">{{t "setup.next"}}</button>
 				</div>
 			</div>
 
 			<!-- Step 2: API Token -->
 			<div id="step-2" class="wizard-step hidden">
-				<h2>API Token</h2>
-				<p>Your API token has been generated. Save it now - it will only be shown once.</p>
+				<h2>{{t "setup.api_token"}}</h2>
+				<p>{{t "setup.token_once"}}</p>
 				<div class="api-token-display" id="api-token-display">
-					<span id="api-token">Generating...</span>
+					<span id="api-token">{{t "setup.generating"}}</span>
 				</div>
-				<button type="button" class="btn btn-secondary" onclick="copyToken()">Copy Token</button>
+				<button type="button" class="btn btn-secondary" onclick="copyToken()">{{t "setup.copy_token"}}</button>
 				<div class="warning">
-					<strong>Important:</strong> Store this token securely. You will need it for API access.
-					This token cannot be retrieved later.
+					<strong>{{t "setup.important"}}</strong> {{t "setup.token_warning"}}
 				</div>
 				<div class="btn-group">
-					<button type="button" class="btn btn-secondary" onclick="prevStep(2)">Back</button>
-					<button type="button" class="btn btn-primary" onclick="nextStep(2)">Next</button>
+					<button type="button" class="btn btn-secondary" onclick="prevStep(2)">{{t "setup.back"}}</button>
+					<button type="button" class="btn btn-primary" onclick="nextStep(2)">{{t "setup.next"}}</button>
 				</div>
 			</div>
 
 			<!-- Step 3: Server Configuration -->
 			<div id="step-3" class="wizard-step hidden">
-				<h2>Server Configuration</h2>
+				<h2>{{t "setup.server_configuration"}}</h2>
 				<div class="form-group">
-					<label for="app_name">Application Name</label>
+					<label for="app_name">{{t "setup.application_name"}}</label>
 					<input type="text" id="app_name" name="app_name" value="casspeed">
 				</div>
 				<div class="form-group">
-					<label for="domain">Domain (FQDN)</label>
+					<label for="domain">{{t "setup.domain"}}</label>
 					<input type="text" id="domain" name="domain" placeholder="speedtest.example.com">
-					<div class="form-hint">Leave empty if not using a custom domain.</div>
+					<div class="form-hint">{{t "setup.domain_hint"}}</div>
 				</div>
 				<div class="form-group">
-					<label for="mode">Mode</label>
+					<label for="mode">{{t "mode"}}</label>
 					<select id="mode" name="mode">
-						<option value="production">Production</option>
-						<option value="development">Development</option>
+						<option value="production">{{t "production"}}</option>
+						<option value="development">{{t "development"}}</option>
 					</select>
 				</div>
 				<div class="form-group">
-					<label for="timezone">Timezone</label>
+					<label for="timezone">{{t "setup.timezone"}}</label>
 					<select id="timezone" name="timezone">
-						<option value="America/New_York">America/New_York (Eastern)</option>
-						<option value="America/Chicago">America/Chicago (Central)</option>
-						<option value="America/Denver">America/Denver (Mountain)</option>
-						<option value="America/Los_Angeles">America/Los_Angeles (Pacific)</option>
-						<option value="UTC">UTC</option>
+						<option value="America/New_York">America/New_York ({{t "setup.timezone.eastern"}})</option>
+						<option value="America/Chicago">America/Chicago ({{t "setup.timezone.central"}})</option>
+						<option value="America/Denver">America/Denver ({{t "setup.timezone.mountain"}})</option>
+						<option value="America/Los_Angeles">America/Los_Angeles ({{t "setup.timezone.pacific"}})</option>
+						<option value="UTC">{{t "setup.timezone.utc"}}</option>
 						<option value="Europe/London">Europe/London</option>
 						<option value="Europe/Paris">Europe/Paris</option>
 						<option value="Asia/Tokyo">Asia/Tokyo</option>
 					</select>
 				</div>
 				<div class="btn-group">
-					<button type="button" class="btn btn-secondary" onclick="prevStep(3)">Back</button>
-					<button type="button" class="btn btn-primary" onclick="nextStep(3)">Next</button>
+					<button type="button" class="btn btn-secondary" onclick="prevStep(3)">{{t "setup.back"}}</button>
+					<button type="button" class="btn btn-primary" onclick="nextStep(3)">{{t "setup.next"}}</button>
 				</div>
 			</div>
 
 			<!-- Step 4: Security Settings -->
 			<div id="step-4" class="wizard-step hidden">
-				<h2>Security Settings</h2>
+				<h2>{{t "setup.security_settings"}}</h2>
 				<div class="form-group">
-					<label for="backup_password">Backup Encryption Password (Optional)</label>
+					<label for="backup_password">{{t "setup.backup_password"}}</label>
 					<input type="password" id="backup_password" name="backup_password">
-					<div class="form-hint">If set, all backups will be encrypted with AES-256-GCM.</div>
+					<div class="form-hint">{{t "setup.backup_password_hint"}}</div>
 				</div>
 				<div class="form-group checkbox-group">
 					<input type="checkbox" id="enable_2fa" name="enable_2fa">
-					<label for="enable_2fa">Enable Two-Factor Authentication (TOTP)</label>
+					<label for="enable_2fa">{{t "setup.enable_2fa"}}</label>
 				</div>
 				<div class="btn-group">
-					<button type="button" class="btn btn-secondary" onclick="prevStep(4)">Back</button>
-					<button type="button" class="btn btn-primary" onclick="nextStep(4)">Next</button>
+					<button type="button" class="btn btn-secondary" onclick="prevStep(4)">{{t "setup.back"}}</button>
+					<button type="button" class="btn btn-primary" onclick="nextStep(4)">{{t "setup.next"}}</button>
 				</div>
 			</div>
 
 			<!-- Step 5: Complete -->
 			<div id="step-5" class="wizard-step hidden">
 				<div class="success">
-					<h2>Setup Complete!</h2>
-					<p>Your casspeed server is now configured and ready to use.</p>
+					<h2>{{t "setup.complete_title"}}</h2>
+					<p>{{t "setup.complete_lead"}}</p>
 				</div>
 				<div class="btn-group">
-					<button type="button" class="btn btn-primary" onclick="completeSetup()">Go to Dashboard</button>
+					<button type="button" class="btn btn-primary" onclick="completeSetup()">{{t "setup.go_dashboard"}}</button>
 				</div>
 			</div>
 		</div>
@@ -600,15 +624,15 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 				const confirm = document.getElementById('admin_password_confirm').value;
 
 				if (!username || username.length < 3) {
-					alert('Username must be at least 3 characters');
+					alert('{{t "setup.js.username_min"}}');
 					return;
 				}
 				if (!password || password.length < 8) {
-					alert('Password must be at least 8 characters');
+					alert('{{t "setup.js.password_min"}}');
 					return;
 				}
 				if (password !== confirm) {
-					alert('Passwords do not match');
+					alert('{{t "setup.js.password_mismatch"}}');
 					return;
 				}
 
@@ -616,8 +640,9 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 				setupData.admin_password = password;
 
 				// Generate API token
-				apiToken = 'adm_' + Array.from(crypto.getRandomValues(new Uint8Array(32)))
-					.map(b => b.toString(16).padStart(2, '0')).join('');
+				const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+				const randomValues = crypto.getRandomValues(new Uint8Array(32));
+				apiToken = 'adm_' + Array.from(randomValues, value => alphabet[value % alphabet.length]).join('');
 				document.getElementById('api-token').textContent = apiToken;
 				setupData.admin_api_token = apiToken;
 			}
@@ -647,12 +672,12 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 
 		function copyToken() {
 			navigator.clipboard.writeText(apiToken).then(() => {
-				alert('Token copied to clipboard');
+				alert('{{t "setup.js.token_copied"}}');
 			});
 		}
 
 		function submitSetup() {
-			fetch('/admin/setup/complete', {
+			fetch('{{.AdminRoot}}/setup/complete', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(setupData)
@@ -662,33 +687,80 @@ func (a *AdminHandler) renderSetupWizard(w http.ResponseWriter, data map[string]
 				if (data.success) {
 					showStep(5);
 				} else {
-					alert('Setup failed: ' + (data.error || 'Unknown error'));
+					alert('{{t "setup.js.setup_failed"}} ' + (data.error || '{{t "setup.js.unknown_error"}}'));
 				}
 			})
 			.catch(err => {
-				alert('Setup failed: ' + err.message);
+				alert('{{t "setup.js.setup_failed"}} ' + err.message);
 			});
 		}
 
 		function completeSetup() {
-			window.location.href = '/admin/';
+			window.location.href = '{{.AdminRoot}}';
 		}
 	</script>
 </body>
 </html>`
 
+	lang, _ := data["Lang"].(string)
+	direction, _ := data["Direction"].(string)
+	tFunc, _ := data["T"].(func(string) string)
+	data["Lang"] = lang
+	data["Direction"] = direction
+	parsed, err := template.New("setup-wizard").Funcs(template.FuncMap{"t": tFunc}).Parse(tmpl)
+	if err != nil {
+		http.Error(w, tFunc("setup.error.template"), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(tmpl))
+	if err := parsed.Execute(w, data); err != nil {
+		return
+	}
 }
 
 // Helper functions
 
-func generateAPIToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+func setupValidationMessage(r *http.Request, err error) string {
+	if err == nil {
+		return adminText(r, "setup.error.invalid_request")
 	}
-	return "adm_" + hex.EncodeToString(bytes), nil
+	keys := map[string]string{
+		"admin username is required":                   "setup.validation.username_required",
+		"admin username must be 3-30 characters":       "setup.validation.username_length",
+		"admin password is required":                   "setup.validation.password_required",
+		"admin password must be at least 8 characters": "setup.validation.password_min",
+		"mode must be 'production' or 'development'":   "setup.validation.mode_invalid",
+	}
+	if key, ok := keys[err.Error()]; ok {
+		return adminText(r, key)
+	}
+	return adminText(r, "setup.error.invalid_request")
+}
+
+func generateAPIToken() (string, error) {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	token := make([]byte, 32)
+	limit := big.NewInt(int64(len(alphabet)))
+	for index := range token {
+		randomIndex, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			return "", err
+		}
+		token[index] = alphabet[randomIndex.Int64()]
+	}
+	return "adm_" + string(token), nil
+}
+
+func validAdminTokenFormat(token string) bool {
+	if len(token) != 36 || !strings.HasPrefix(token, "adm_") {
+		return false
+	}
+	for _, character := range token[4:] {
+		if !strings.ContainsRune("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", character) {
+			return false
+		}
+	}
+	return true
 }
 
 func hashPassword(password string) (string, error) {

@@ -34,22 +34,22 @@ type Histogram struct {
 // Metrics holds all application metrics
 type Metrics struct {
 	// HTTP metrics
-	RequestsTotal     *Counter
-	RequestsActive    *Gauge
-	ResponseTime      *Histogram
-	ErrorsTotal       *Counter
+	RequestsTotal  *Counter
+	RequestsActive *Gauge
+	ResponseTime   *Histogram
+	ErrorsTotal    *Counter
 
 	// Speed test metrics
-	TestsTotal        *Counter
-	TestsActive       *Gauge
-	DownloadSpeed     *Histogram
-	UploadSpeed       *Histogram
-	PingLatency       *Histogram
+	TestsTotal    *Counter
+	TestsActive   *Gauge
+	DownloadSpeed *Histogram
+	UploadSpeed   *Histogram
+	PingLatency   *Histogram
 
 	// System metrics
-	MemoryUsage       *Gauge
-	GoroutineCount    *Gauge
-	CPUUsage          *Gauge
+	MemoryUsage    *Gauge
+	GoroutineCount *Gauge
+	CPUUsage       *Gauge
 
 	mu     sync.RWMutex
 	config *Config
@@ -214,22 +214,22 @@ func (m *Metrics) collectSystemMetrics() {
 func (m *Metrics) Summary() map[string]interface{} {
 	return map[string]interface{}{
 		"http": map[string]interface{}{
-			"requests_total":  m.RequestsTotal.Value(),
-			"requests_active": m.RequestsActive.Value(),
+			"requests_total":    m.RequestsTotal.Value(),
+			"requests_active":   m.RequestsActive.Value(),
 			"response_time_avg": m.ResponseTime.Mean(),
 			"response_time_p95": m.ResponseTime.Percentile(95),
-			"errors_total":    m.ErrorsTotal.Value(),
+			"errors_total":      m.ErrorsTotal.Value(),
 		},
 		"speedtest": map[string]interface{}{
-			"tests_total":     m.TestsTotal.Value(),
-			"tests_active":    m.TestsActive.Value(),
-			"download_avg":    m.DownloadSpeed.Mean(),
-			"upload_avg":      m.UploadSpeed.Mean(),
-			"ping_avg":        m.PingLatency.Mean(),
+			"tests_total":  m.TestsTotal.Value(),
+			"tests_active": m.TestsActive.Value(),
+			"download_avg": m.DownloadSpeed.Mean(),
+			"upload_avg":   m.UploadSpeed.Mean(),
+			"ping_avg":     m.PingLatency.Mean(),
 		},
 		"system": map[string]interface{}{
-			"memory_bytes":     m.MemoryUsage.Value(),
-			"goroutines":       m.GoroutineCount.Value(),
+			"memory_bytes":      m.MemoryUsage.Value(),
+			"goroutines":        m.GoroutineCount.Value(),
 			"cpu_usage_percent": m.CPUUsage.Value(),
 		},
 	}
@@ -261,6 +261,7 @@ func (m *Metrics) RecordSpeedTest(downloadMbps, uploadMbps, pingMs float64) {
 	m.DownloadSpeed.Observe(downloadMbps)
 	m.UploadSpeed.Observe(uploadMbps)
 	m.PingLatency.Observe(pingMs)
+	RecordSpeedTestMetrics(downloadMbps, uploadMbps, pingMs)
 }
 
 // TotalRequests returns the total number of HTTP requests (lifetime)

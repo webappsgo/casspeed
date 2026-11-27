@@ -5,15 +5,40 @@
   'use strict';
 
   /* ── Constants ──────────────────────────────────────────────────── */
-  var WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-               location.host + '/api/v1/speed-tests/ws';
-
   /* Gauge arc length for a 180-degree semicircle at r=100 */
   /* Arc path used: from 180deg to 0deg on a 240x140 viewport */
   var GAUGE_ARC_LENGTH = 220;
 
   /* Max scale for gauge needle — anything above this shows as full */
   var GAUGE_MAX_MBPS = 1000;
+
+  var translations = {};
+  var translationNode = document.getElementById('home-translations');
+  if (translationNode) {
+    try {
+      translations = JSON.parse(translationNode.textContent || '{}');
+    } catch (_) {
+      translations = {};
+    }
+  }
+  var apiBase = document.body.dataset.apiBase || '/api/v1';
+  var basePath = document.body.dataset.basePath || '';
+
+  function t(key, values) {
+    var value = translations;
+    key.split('.').forEach(function (part) { value = value && value[part]; });
+    value = typeof value === 'string' ? value : key;
+    Object.keys(values || {}).forEach(function (name) {
+      value = value.replace('{' + name + '}', values[name]);
+    });
+    return value;
+  }
+
+  function pagePath(path) {
+    if (!path || path.indexOf('//') === 0 || /^[a-z][a-z0-9+.-]*:/i.test(path)) { return path; }
+    if (basePath && (path === basePath || path.indexOf(basePath + '/') === 0)) { return path; }
+    return path.charAt(0) === '/' ? basePath + path : basePath + '/' + path;
+  }
 
   /* ── DOM references (set once on DOMContentLoaded) ─────────────── */
   var startBtn, testAgainBtn;
@@ -25,6 +50,7 @@
   var liveNumber, liveUnit, liveStage;
   var gaugeArc, gaugeValue, gaugeUnit, gaugeLabel;
   var shareInput, shareCopyBtn;
+  var shareCreateBtn, resultID, testSettings;
   var noJsFallback;
 
   /* ── State ──────────────────────────────────────────────────────── */
@@ -70,6 +96,7 @@
     gaugeLabel      = document.getElementById('gaugeLabelText');
     shareInput      = document.getElementById('shareInput');
     shareCopyBtn    = document.getElementById('shareCopyBtn');
+    shareCreateBtn  = document.getElementById('shareCreateBtn');
     noJsFallback    = document.getElementById('noJsFallback');
   }
 
@@ -82,6 +109,9 @@
     }
     if (shareCopyBtn) {
       shareCopyBtn.addEventListener('click', copyShareLink);
+    }
+    if (shareCreateBtn) {
+      shareCreateBtn.addEventListener('click', createShareLink);
     }
   }
 
@@ -125,7 +155,7 @@
       startBtn.classList.remove('start-btn--idle');
       startBtn.classList.add('start-btn--running');
       startBtn.disabled = true;
-      startBtn.textContent = 'Testing…';
+      startBtn.textContent = t('testing');
     }
     if (progressSection) {
       progressSection.classList.add('is-visible');
@@ -137,19 +167,36 @@
       shareSection.classList.remove('is-visible');
     }
 
-    setStatus('Connecting to server…');
+    setStatus(t('connecting_server'));
     setPhase(null);
-    updateProgress(0, 'Connecting');
+    updateProgress(0, t('connecting'));
 
+    fetch(apiBase + '/speed-tests', { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (response) {
+        return response.json().then(function (body) {
+          if (!response.ok || !body.ok || !body.data || !body.data.test_id) {
+            throw new Error(t('could_not_start'));
+          }
+          resultID = body.data.test_id;
+          testSettings = body.data;
+          openProgressSocket(resultID, testSettings);
+        });
+      })
+      .catch(function () { onError(t('could_not_start_retry')); });
+  }
+
+  function openProgressSocket(testID, settings) {
+    var wsURL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
+      apiBase + '/speed-tests/' + encodeURIComponent(testID) + '/status';
     try {
-      ws = new WebSocket(WS_URL);
-    } catch (err) {
-      onError('Could not open WebSocket connection.');
+      ws = new WebSocket(wsURL);
+    } catch (_) {
+      onError(t('websocket_failed'));
       return;
     }
 
     ws.addEventListener('open', function () {
-      setStatus('Measuring ping…');
+      runBrowserTest(testID, settings);
     });
 
     ws.addEventListener('message', function (evt) {
@@ -163,22 +210,149 @@
     });
 
     ws.addEventListener('error', function () {
-      onError('Connection lost. Please try again.');
+      onError(t('connection_lost'));
     });
 
     ws.addEventListener('close', function () {
       if (isRunning) {
         /* Closed before "complete" message — treat as error */
-        onError('Connection closed unexpectedly. Please try again.');
+        onError(t('connection_closed'));
       }
     });
+  }
+
+  async function runBrowserTest(testID, settings) {
+    try {
+      setPhase('ping');
+      setStatus(t('measuring_latency'));
+      var pingSamples = [];
+      var failedPings = 0;
+      for (var i = 0; i < 10; i++) {
+        var pingStart = performance.now();
+        try {
+          var pingResponse = await fetch(apiBase + '/server/healthz?probe=' + i + '-' + Date.now(), {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' }
+          });
+          await pingResponse.arrayBuffer();
+          if (!pingResponse.ok) { throw new Error(t('latency_request_failed')); }
+          pingSamples.push(performance.now() - pingStart);
+        } catch (_) {
+          failedPings++;
+        }
+        handleMessage({ stage: 'ping', progress: (i + 1) / 10, speed: average(pingSamples) });
+      }
+      if (pingSamples.length === 0) { throw new Error(t('could_not_measure_latency')); }
+      var ping = average(pingSamples);
+      var jitter = deviation(pingSamples, ping);
+      var packetLoss = failedPings * 10;
+
+      var duration = Number(settings.duration_seconds) || 10;
+      var threads = Math.max(1, Math.min(Number(settings.threads) || 4, 16));
+      var chunkSize = Math.max(65536, Math.min(Number(settings.chunk_size) || 1048576, 16777216));
+      var download = await measureTransfer(testID, 'download', duration, threads, chunkSize);
+      var upload = await measureTransfer(testID, 'upload', duration, threads, chunkSize);
+      if (!ws || ws.readyState !== WebSocket.OPEN) { throw new Error(t('connection_lost')); }
+      ws.send(JSON.stringify({
+        type: 'result',
+        download_mbps: download,
+        upload_mbps: upload,
+        ping_ms: ping,
+        jitter_ms: jitter,
+        packet_loss: packetLoss
+      }));
+    } catch (error) {
+      onError(error.message || t('test_failed'));
+    }
+  }
+
+  async function measureTransfer(testID, stage, durationSeconds, threads, chunkSize) {
+    setPhase(stage);
+    setStatus(t('measuring_stage_speed', { stage: stageLabel(stage) }));
+    var started = performance.now();
+    var deadline = started + durationSeconds * 1000;
+    var bytesTransferred = 0;
+    var requestID = 0;
+    var payload = null;
+    if (stage === 'upload') {
+      var randomChunk = new Uint8Array(65536);
+      if (window.crypto && window.crypto.getRandomValues) {
+        window.crypto.getRandomValues(randomChunk);
+      } else {
+        throw new Error(t('secure_test_data'));
+      }
+      var parts = [];
+      for (var part = 0; part < Math.ceil(chunkSize / randomChunk.byteLength); part++) { parts.push(randomChunk); }
+      payload = new Blob(parts, { type: 'application/octet-stream' });
+    }
+    var timer = window.setInterval(function () {
+      var elapsed = Math.max((performance.now() - started) / 1000, 0.001);
+      var speed = bytesTransferred * 8 / elapsed / 1000000;
+      var progress = Math.min((performance.now() - started) / (durationSeconds * 1000), 1);
+      handleMessage({ stage: stage, progress: progress, speed: speed });
+    }, 200);
+    async function worker() {
+      while (performance.now() < deadline && isRunning && ws && ws.readyState === WebSocket.OPEN) {
+        var url = apiBase + '/speed-tests/' + encodeURIComponent(testID);
+        var options = { method: 'GET', cache: 'no-store', credentials: 'same-origin', headers: { 'Cache-Control': 'no-cache' } };
+        if (stage === 'download') {
+          url += '/download?bytes=' + chunkSize + '&request=' + (requestID++);
+        } else {
+          url += '/uploads';
+          options.method = 'POST';
+          options.body = payload;
+          options.headers['Content-Type'] = 'application/octet-stream';
+        }
+        try {
+          var response = await fetch(url, options);
+          if (!response.ok) { throw new Error(t('stage_transfer_failed', { stage: stageLabel(stage) })); }
+          if (stage === 'download') {
+            var downloaded = await response.arrayBuffer();
+            bytesTransferred += downloaded.byteLength;
+          } else {
+            var accepted = await response.json();
+            if (!accepted.ok || !accepted.data) { throw new Error(t('upload_transfer_failed')); }
+            bytesTransferred += accepted.data.bytes;
+          }
+        } catch (_) {
+          throw new Error(t('stage_transfer_failed', { stage: stageLabel(stage) }));
+        }
+      }
+    }
+    try {
+      var workers = [];
+      for (var index = 0; index < threads; index++) { workers.push(worker()); }
+      await Promise.all(workers);
+    } finally {
+      window.clearInterval(timer);
+    }
+    var elapsedSeconds = Math.max((performance.now() - started) / 1000, 0.001);
+    return bytesTransferred * 8 / elapsedSeconds / 1000000;
+  }
+
+  function average(values) {
+    if (!values.length) { return 0; }
+    return values.reduce(function (sum, value) { return sum + value; }, 0) / values.length;
+  }
+
+  function deviation(values, mean) {
+    if (values.length < 2) { return 0; }
+    var variance = values.reduce(function (sum, value) {
+      return sum + Math.pow(value - mean, 2);
+    }, 0) / values.length;
+    return Math.sqrt(variance);
   }
 
   function handleMessage(data) {
     var stage    = data.stage || '';
     var progress = typeof data.progress === 'number' ? data.progress : 0;
     var speed    = typeof data.speed === 'number' ? data.speed : 0;
-    var message  = data.message || '';
+
+    if (stage === 'error') {
+      onError(data.message || t('test_failed'));
+      return;
+    }
 
     if (stage === 'complete') {
       onComplete(data);
@@ -208,12 +382,12 @@
     }
 
     updateProgress(stagePct, stageLabel(stage));
-    setStatus(message || stageLabel(stage) + '…');
+    setStatus(stage === 'ping' ? t('measuring_latency') : t('measuring_stage_speed', { stage: stageLabel(stage) }));
 
     /* Live speed readout */
     if (stage === 'ping') {
-      setLiveSpeed(speed, 'ms', 'Ping');
-      updateGauge(Math.min(speed / 200, 1), speed, 'ms', 'Ping');
+      setLiveSpeed(speed, 'ms', t('ping'));
+      updateGauge(Math.min(speed / 200, 1), speed, 'ms', t('ping'));
     } else {
       setLiveSpeed(speed, 'Mbps', stageLabel(stage));
       updateGauge(Math.min(speed / GAUGE_MAX_MBPS, 1), speed, 'Mbps', stageLabel(stage));
@@ -231,10 +405,11 @@
     var jit  = typeof data.jitter_ms     === 'number' ? data.jitter_ms     : (stageResults.jitter || 0);
     var loss = typeof data.packet_loss   === 'number' ? data.packet_loss   : (stageResults.packetLoss || 0);
     var shareCode = data.share_code || '';
+    resultID = data.test_id || '';
 
-    updateProgress(1, 'Complete');
+    updateProgress(1, t('complete'));
     setPhaseAllDone();
-    setStatus('Test complete');
+    setStatus(t('test_complete'));
 
     /* Populate result cards */
     setText(dlValue,     fmt(dl, 2));
@@ -249,24 +424,27 @@
     }
 
     /* Share link */
-    if (shareCode && shareSection && shareInput) {
-      var shareUrl = location.protocol + '//' + location.host + '/share/' + shareCode;
-      shareInput.value = shareUrl;
+    if (shareSection) {
       shareSection.classList.add('is-visible');
+    }
+    if (shareCode && shareInput) {
+      shareInput.value = location.protocol + '//' + location.host + pagePath('/shares/' + shareCode);
+      if (shareCreateBtn) { shareCreateBtn.hidden = true; }
+      if (shareCopyBtn) { shareCopyBtn.hidden = false; }
     }
 
     /* Reset button */
     if (startBtn) {
       startBtn.classList.remove('start-btn--running');
-      startBtn.style.display = 'none';
+      startBtn.hidden = true;
     }
     if (testAgainBtn) {
-      testAgainBtn.style.display = '';
+      testAgainBtn.hidden = false;
     }
 
     /* Final gauge showing download speed */
-    updateGauge(Math.min(dl / GAUGE_MAX_MBPS, 1), dl, 'Mbps', 'Download');
-    setLiveSpeed(dl, 'Mbps', 'Download');
+    updateGauge(Math.min(dl / GAUGE_MAX_MBPS, 1), dl, 'Mbps', t('download'));
+    setLiveSpeed(dl, 'Mbps', t('download'));
   }
 
   function onError(msg) {
@@ -282,7 +460,7 @@
       startBtn.classList.remove('start-btn--running');
       startBtn.classList.add('start-btn--idle');
       startBtn.disabled = false;
-      startBtn.textContent = 'START';
+      startBtn.textContent = t('start');
     }
     if (progressSection) {
       progressSection.classList.remove('is-visible');
@@ -297,30 +475,34 @@
     if (resultsSection)  { resultsSection.classList.remove('is-visible'); }
     if (shareSection)    { shareSection.classList.remove('is-visible'); }
     if (progressSection) { progressSection.classList.remove('is-visible'); }
+    if (shareInput)      { shareInput.value = ''; }
+    if (shareCreateBtn)  { shareCreateBtn.hidden = false; shareCreateBtn.disabled = false; }
+    if (shareCopyBtn)    { shareCopyBtn.hidden = true; }
+    resultID = '';
 
     if (startBtn) {
-      startBtn.style.display = '';
+      startBtn.hidden = false;
       startBtn.classList.add('start-btn--idle');
       startBtn.classList.remove('start-btn--running');
       startBtn.disabled = false;
-      startBtn.textContent = 'START';
+      startBtn.textContent = t('start');
     }
     if (testAgainBtn) {
-      testAgainBtn.style.display = 'none';
+      testAgainBtn.hidden = true;
     }
 
     setStatus('');
     updateProgress(0, '');
     setPhase(null);
     setLiveSpeed(0, 'Mbps', '');
-    updateGauge(0, 0, 'Mbps', 'Speed');
+    updateGauge(0, 0, 'Mbps', t('speed'));
   }
 
   /* ── UI helpers ─────────────────────────────────────────────────── */
 
   function stageLabel(stage) {
-    var labels = { ping: 'Ping', download: 'Download', upload: 'Upload' };
-    return labels[stage] || stage;
+    var labels = { ping: t('ping'), download: t('download'), upload: t('upload') };
+    return labels[stage] || t('speed');
   }
 
   function updateProgress(fraction, label) {
@@ -402,22 +584,44 @@
     }
   }
 
+  function createShareLink() {
+    if (!resultID || !shareCreateBtn) { return; }
+    shareCreateBtn.disabled = true;
+    fetch(apiBase + '/speed-tests/' + encodeURIComponent(resultID) + '/shares', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok || !body.ok || !body.data || !body.data.url) {
+          throw new Error(t('unable_to_create_share'));
+        }
+        shareInput.value = location.protocol + '//' + location.host + pagePath(body.data.url);
+        shareCreateBtn.hidden = true;
+        shareCopyBtn.hidden = false;
+      });
+    }).catch(function () {
+      setStatus(t('unable_to_create_share'));
+      shareCreateBtn.disabled = false;
+    });
+  }
+
   function fallbackCopy(text) {
     shareInput.select();
     try {
       document.execCommand('copy');
       showCopied();
     } catch (_) {
-      showToast('Could not copy to clipboard — select the URL manually.', 'info');
+      showToast(t('copy_manually'), 'info');
     }
   }
 
   function showCopied() {
     if (!shareCopyBtn) { return; }
     var orig = shareCopyBtn.textContent;
-    shareCopyBtn.textContent = 'Copied!';
+    shareCopyBtn.textContent = t('copied');
     shareCopyBtn.classList.add('is-copied');
-    showToast('Share link copied to clipboard.', 'success');
+    showToast(t('share_copied'), 'success');
     setTimeout(function () {
       shareCopyBtn.textContent = orig;
       shareCopyBtn.classList.remove('is-copied');

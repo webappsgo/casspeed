@@ -1,129 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - casspeed</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #0f0f23;
-        color: #e8e8e8;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      .header {
-        background: #1a1a2e;
-        padding: 1rem 2rem;
-        border-bottom: 1px solid #2a2a3e;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .header h1 { font-size: 1.5em; color: #667eea; }
-      .main {
-        display: flex;
-        flex: 1;
-      }
-      .sidebar {
-        width: 250px;
-        background: #16213e;
-        padding: 2rem 1rem;
-        border-right: 1px solid #2a2a3e;
-      }
-      .nav-item {
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-      .nav-item:hover { background: #1a1a2e; }
-      .nav-item.active { background: #667eea; }
-      .content {
-        flex: 1;
-        padding: 2rem;
-        max-width: 1200px;
-      }
-      .card {
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 2rem;
-        margin-bottom: 2rem;
-      }
-      .card h2 { margin-bottom: 1rem; color: #667eea; }
-      .stat-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-top: 1rem;
-      }
-      .stat {
-        background: #16213e;
-        padding: 1.5rem;
-        border-radius: 8px;
-        text-align: center;
-      }
-      .stat-value {
-        font-size: 2em;
-        font-weight: bold;
-        color: #667eea;
-      }
-      .stat-label {
-        margin-top: 0.5rem;
-        color: #888;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header">
-      <h1>🚀 casspeed Admin</h1>
-      <div>
-        <span>Admin</span>
-        <button onclick="location.href='/admin/logout'">Logout</button>
-      </div>
-    </div>
-    <div class="main">
-      <nav class="sidebar">
-        <div class="nav-item active">📊 Dashboard</div>
-        <div class="nav-item">⚙️ Settings</div>
-        <div class="nav-item">👥 Users</div>
-        <div class="nav-item">📈 Statistics</div>
-        <div class="nav-item">🔒 Security</div>
-        <div class="nav-item">📝 Logs</div>
-      </nav>
-      <div class="content">
-        <div class="card">
-          <h2>Dashboard</h2>
-          <div class="stat-grid">
-            <div class="stat">
-              <div class="stat-value">0</div>
-              <div class="stat-label">Total Tests</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">0</div>
-              <div class="stat-label">Active Users</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">Online</div>
-              <div class="stat-label">Server Status</div>
-            </div>
-            <div class="stat">
-              <div class="stat-value">0.1.0</div>
-              <div class="stat-label">Version</div>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Server Information</h2>
-          <p>Mode: development</p>
-          <p>Port: 80</p>
-          <p>Max Threads: 16</p>
-          <p>Max Concurrent Tests: 3</p>
-        </div>
-      </div>
-    </div>
-  </body>
+<!doctype html>
+<html lang="{{.Lang}}" dir="{{.Direction}}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{t "admin.legacy.dashboard"}} — CasSpeed {{t "admin.legacy.brand"}}</title>
+	<link rel="stylesheet" href="/static/css/theme-dark.css">
+	<link rel="stylesheet" href="/static/css/theme-light.css">
+	<link rel="stylesheet" href="/static/css/style.css">
+	<link rel="stylesheet" href="/static/css/admin/style.css">
+	<script src="/static/js/theme.js" defer></script>
+</head>
+<body>
+	<a class="skip-link" href="#main-content">{{t "admin.legacy.skip_content"}}</a>
+	<a class="skip-link" href="#admin-navigation">{{t "admin.legacy.skip_navigation"}}</a>
+	<header class="admin-header"><a href="{{.AdminRoot}}/">CasSpeed {{t "admin.legacy.brand"}}</a></header>
+	<div class="admin-layout">
+		<nav id="admin-navigation" class="admin-nav" aria-label="{{t "admin.legacy.navigation"}}">
+			<ul>
+				<li><a aria-current="page" href="{{.AdminRoot}}/">{{t "admin.legacy.dashboard"}}</a></li>
+				<li><a href="{{.AdminRoot}}/settings">{{t "admin.legacy.settings"}}</a></li>
+				<li><a href="{{.AdminRoot}}/info">{{t "admin.legacy.server_information"}}</a></li>
+				<li><a href="{{.AdminRoot}}/logs">{{t "admin.legacy.logs"}}</a></li>
+			</ul>
+			<form action="/server/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit">{{t "admin.legacy.log_out"}}</button></form>
+		</nav>
+		<main id="main-content" class="admin-content">
+			<header class="page-header"><h1 class="page-title">{{t "admin.legacy.dashboard"}}</h1></header>
+			<section class="section-card" aria-labelledby="status-heading">
+				<h2 id="status-heading">{{t "admin.legacy.system_status"}}</h2>
+				<dl>
+					<div><dt>{{t "admin.legacy.service"}}</dt><dd>{{.Status}}</dd></div>
+					<div><dt>{{t "admin.legacy.version"}}</dt><dd>{{.Version}}</dd></div>
+					<div><dt>{{t "admin.legacy.mode"}}</dt><dd>{{.ModeLabel}}</dd></div>
+					<div><dt>{{t "admin.legacy.port"}}</dt><dd>{{.Port}}</dd></div>
+					<div><dt>{{t "admin.legacy.max_threads"}}</dt><dd>{{.MaxThreads}}</dd></div>
+					<div><dt>{{t "admin.legacy.max_concurrent"}}</dt><dd>{{.MaxConcurrent}}</dd></div>
+					<div><dt>{{t "admin.legacy.total_tests"}}</dt><dd>{{.TotalTests}}</dd></div>
+					<div><dt>{{t "admin.legacy.registered_users"}}</dt><dd>{{.ActiveUsers}}</dd></div>
+				</dl>
+			</section>
+		</main>
+	</div>
+	<footer class="site-footer">CasSpeed {{t "admin.legacy.brand"}}</footer>
+</body>
 </html>

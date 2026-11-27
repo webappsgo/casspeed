@@ -58,11 +58,12 @@ tmp/
 temp/
 *.tmp
 
-# Config overrides (keep .example files)
+# Runtime configuration files
 server.yml
+secrets.yml
+yaml.d/
 cli.yml
-!server.yml.example
-!cli.yml.example
+setup_token.txt
 
 # Generated files
 coverage.txt

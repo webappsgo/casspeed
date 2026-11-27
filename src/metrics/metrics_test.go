@@ -286,6 +286,52 @@ func TestExport_ContainsPrometheusLines(t *testing.T) {
 	}
 }
 
+func TestPrometheusRegistryExportsLabeledHistogramsAndOptionalFamilies(t *testing.T) {
+	ConfigurePrometheus(PrometheusConfig{
+		IncludeSystem:   true,
+		IncludeRuntime:  true,
+		DurationBuckets: []float64{0.01, 1},
+		SizeBuckets:     []float64{100, 1000},
+	})
+	RecordHTTP("GET", "/api/v1/users/123", "200", .2, 18, 64)
+	RecordDatabase("select", "users", "", .001)
+	RecordCacheAccess("sessions", true)
+	RecordScheduler("cleanup", "success", .5)
+	RecordSpeedTestMetrics(120, 35, 8)
+	body, err := ExportPrometheus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`casspeed_http_requests_total{method="GET",path="/api/v1/users/:id",status="200"} 1`,
+		`casspeed_http_request_duration_seconds_bucket{method="GET",path="/api/v1/users/:id",le="0.01"}`,
+		`casspeed_db_queries_total{operation="select",table="users"} 1`,
+		`casspeed_cache_hits_total{cache="sessions"} 1`,
+		`casspeed_scheduler_tasks_total{status="success",task="cleanup"} 1`,
+		`casspeed_speedtest_tests_total 1`,
+		`casspeed_system_memory_used_bytes`,
+		`casspeed_go_goroutines`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Errorf("Prometheus output missing %q", expected)
+		}
+	}
+}
+
+func TestPrometheusRegistryHonorsIncludeFlags(t *testing.T) {
+	ConfigurePrometheus(PrometheusConfig{IncludeSystem: false, IncludeRuntime: false})
+	body, err := ExportPrometheus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "casspeed_system_") || strings.Contains(body, "casspeed_go_") {
+		t.Fatalf("optional system/runtime metrics were exported: %s", body)
+	}
+	if !strings.Contains(body, "casspeed_app_info") || !strings.Contains(body, "casspeed_http_requests_total") {
+		t.Fatalf("required metrics were omitted: %s", body)
+	}
+}
+
 // ---- Reset test ----------------------------------------------------------
 
 func TestReset_ClearsAllMetrics(t *testing.T) {

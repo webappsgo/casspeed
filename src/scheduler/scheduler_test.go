@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -206,6 +207,22 @@ func TestDisableTask_Success(t *testing.T) {
 	task, _ := s.GetTask("t1")
 	if task.Enabled {
 		t.Error("task should be disabled after DisableTask")
+	}
+}
+
+func TestRunTaskRecoversPanicAndRecordsFailure(t *testing.T) {
+	s, err := New("UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+	task := &Task{ID: "panic", Schedule: "@hourly", Enabled: true, Handler: func(context.Context) error { panic("task failure") }}
+	if err := s.AddTask(task); err != nil {
+		t.Fatal(err)
+	}
+	s.runTask(task)
+	if task.LastStatus != "failed" || !strings.Contains(task.LastError, "task panicked") || task.FailCount != 1 {
+		t.Fatalf("panic state = status %q, error %q, failures %d", task.LastStatus, task.LastError, task.FailCount)
 	}
 }
 

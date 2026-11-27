@@ -9,10 +9,10 @@ import (
 
 func TestFormatURL(t *testing.T) {
 	cases := []struct {
-		host    string
-		port    int
-		https   bool
-		want    string
+		host  string
+		port  int
+		https bool
+		want  string
 	}{
 		{"example.com", 80, false, "http://example.com"},
 		{"example.com", 443, false, "https://example.com"},
@@ -209,4 +209,3 @@ func TestNeedsRenewal_SystemCertExpiring(t *testing.T) {
 		t.Error("system cert only checks IsExpired, not DaysLeft")
 	}
 }
-

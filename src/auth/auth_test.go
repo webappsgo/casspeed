@@ -280,3 +280,26 @@ func TestValidatePassword(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePasswordPolicy(t *testing.T) {
+	tests := []struct {
+		name, password         string
+		min                    int
+		upper, number, special bool
+		wantErr                bool
+	}{
+		{name: "valid", password: "StrongPass1!", min: 8, upper: true, number: true, special: true},
+		{name: "minimum", password: "Short1!", min: 8, wantErr: true},
+		{name: "missing uppercase", password: "lowercase1!", min: 8, upper: true, wantErr: true},
+		{name: "missing number", password: "Uppercase!", min: 8, upper: true, number: true, wantErr: true},
+		{name: "missing special", password: "Uppercase1", min: 8, upper: true, number: true, special: true, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidatePasswordPolicy(test.password, test.min, test.upper, test.number, test.special)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ValidatePasswordPolicy() err=%v, wantErr=%t", err, test.wantErr)
+			}
+		})
+	}
+}

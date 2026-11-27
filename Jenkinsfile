@@ -41,6 +41,7 @@ pipeline {
     environment {
         PROJECT_NAME = 'casspeed'
         PROJECT_ORG = 'webappsgo'
+        PROJECT_METADATA_ORG = 'casapps'
         BINDIR = 'binaries'
         RELDIR = 'releases'
         INTERNAL_NAME = 'casspeed'
@@ -580,14 +581,21 @@ pipeline {
             agent { label 'amd64' }
             steps {
                 sh '''
+                    set -eu
+                    mkdir -p "${TMPDIR:-/tmp}/${PROJECT_ORG}"
+                    COVDIR=$(mktemp -d "${TMPDIR:-/tmp}/${PROJECT_ORG}/${PROJECT_NAME}-XXXXXX")
+                    trap 'rm -rf -- "$COVDIR"' EXIT
+                    mkdir -p "$COVDIR/data"
                     docker run --rm \
                         --name "${PROJECT_NAME}-$(tr -dc 'a-z0-9' </dev/urandom | head -c8)" \
                         -v ${WORKSPACE}:/app \
                         -v ${GO_CACHE}:/usr/local/share/go/pkg/mod \
                         -v ${GO_BUILD}:/usr/local/share/go/cache \
+                        -v "$COVDIR:/coverage" \
                         -w /app \
+                        -e GOCOVERDIR=/coverage/data \
                         casjaysdev/go:latest \
-                        go test -v -cover ./...
+                        sh -c 'go mod download && go test -v -cover ./... -args -test.gocoverdir="$GOCOVERDIR" && go tool covdata textfmt -i="$GOCOVERDIR" -o=/coverage/coverage.out && COVERAGE=$(go tool cover -func=/coverage/coverage.out | awk "/^total:/ {gsub(\"%\", \"\", \$3); print \$3}") && echo "Aggregate coverage: $COVERAGE%" && awk -v coverage="$COVERAGE" '\''BEGIN { exit !(coverage >= 60) }'\'''
                 '''
             }
         }
@@ -608,8 +616,14 @@ pipeline {
                     agent { label 'amd64' }
                     steps {
                         sh '''
-                            bad=$(grep -RnE '^[[:space:]]*uses:' .github/ .gitea/ .forgejo/ 2>/dev/null | grep -vE '@[0-9a-f]{40}([[:space:]]|$)' || true)
+                            if grep -RqnE '^[[:space:]]*pull_request_target:' .github/workflows .gitea/workflows .forgejo/workflows; then
+                                echo "ERROR: pull_request_target is forbidden"
+                                exit 1
+                            fi
+                            bad=$(grep -RhnE '^[[:space:]]*-?[[:space:]]*uses:' .github/workflows .gitea/workflows .forgejo/workflows | grep -vE 'uses:[[:space:]]*\./[^[:space:]#]+|uses:[[:space:]]*[^[:space:]#]+@[0-9a-f]{40}([[:space:]]|$)' || true)
                             if [ -n "$bad" ]; then echo "unpinned actions found:"; echo "$bad"; exit 1; fi
+                            bad_images=$(grep -nE '(^|[[:space:]])[[:alnum:].-]+(/[[:alnum:]._-]+)+:[^@[:space:]]+([[:space:]\\]|$)' Jenkinsfile | grep -vE 'casjaysdev/go:latest|trufflesecurity/trufflehog:latest|aquasecurity/trivy:0.70.0' || true)
+                            if [ -n "$bad_images" ]; then echo "unpinned Docker images found:"; echo "$bad_images"; exit 1; fi
                         '''
                     }
                 }
@@ -634,7 +648,7 @@ pipeline {
                     steps {
                         sh '''
                             docker build -t local/scan-target:ci -f docker/Dockerfile .
-                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+                            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.70.0 \
                                 image --exit-code 1 --severity CRITICAL,HIGH local/scan-target:ci
                         '''
                     }
@@ -800,8 +814,8 @@ pipeline {
                             --build-arg BUILD_DATE="${BUILD_DATE}" \
                             --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
                             --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
-                            --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
-                            --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+                            --label "org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+                            --label "org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
                             --label "org.opencontainers.image.title=${PROJECT_NAME}" \
                             --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
                             --label "org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
@@ -812,8 +826,8 @@ pipeline {
                             --label "org.opencontainers.image.url=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
                             --label "org.opencontainers.image.source=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
                             --label "org.opencontainers.image.documentation=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
-                            --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
-                            --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+                            --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+                            --annotation "manifest:org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
                             --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}" \
                             --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
                             --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - standard image (alpine)" \
@@ -857,8 +871,8 @@ pipeline {
                             --build-arg BUILD_DATE="${BUILD_DATE}" \
                             --build-arg BUILD_EPOCH="${BUILD_EPOCH}" \
                             --build-arg OFFICIAL_SITE="${OFFICIAL_SITE}" \
-                            --label "org.opencontainers.image.vendor=${PROJECT_ORG}" \
-                            --label "org.opencontainers.image.authors=${PROJECT_ORG}" \
+                            --label "org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+                            --label "org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
                             --label "org.opencontainers.image.title=${PROJECT_NAME}-devel" \
                             --label "org.opencontainers.image.base.name=${PROJECT_NAME}" \
                             --label "org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \
@@ -869,8 +883,8 @@ pipeline {
                             --label "org.opencontainers.image.url=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
                             --label "org.opencontainers.image.source=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
                             --label "org.opencontainers.image.documentation=https://${GIT_FQDN}/${PROJECT_ORG}/${INTERNAL_NAME}" \
-                            --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_ORG}" \
-                            --annotation "manifest:org.opencontainers.image.authors=${PROJECT_ORG}" \
+                            --annotation "manifest:org.opencontainers.image.vendor=${PROJECT_METADATA_ORG}" \
+                            --annotation "manifest:org.opencontainers.image.authors=${PROJECT_METADATA_ORG}" \
                             --annotation "manifest:org.opencontainers.image.title=${PROJECT_NAME}-devel" \
                             --annotation "manifest:org.opencontainers.image.base.name=${PROJECT_NAME}" \
                             --annotation "manifest:org.opencontainers.image.description=${PROJECT_NAME} - development image (alpine, debug mode)" \

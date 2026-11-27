@@ -740,6 +740,33 @@ input[type="checkbox"] {
   color: var(--fg);
 }
 
+.admin-login-submit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.admin-login-back-wrap {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.admin-login-back {
+  font-size: 0.875rem;
+}
+
+.admin-info-label {
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.admin-info-label--wide {
+  width: 40%;
+}
+
+.admin-stat-card__value--compact {
+  font-size: 1.25rem;
+}
+
 /* ── Settings rows ───────────────────────────────────────────────── */
 .settings-row {
   display: flex;

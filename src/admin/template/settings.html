@@ -1,119 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Server Settings - Admin</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #0f0f23;
-        color: #e8e8e8;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-      }
-      .header {
-        background: #1a1a2e;
-        padding: 1rem 2rem;
-        border-bottom: 1px solid #2a2a3e;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .header h1 { font-size: 1.5em; color: #667eea; }
-      .main { display: flex; flex: 1; }
-      .sidebar {
-        width: 250px;
-        background: #16213e;
-        padding: 2rem 1rem;
-        border-right: 1px solid #2a2a3e;
-      }
-      .nav-item {
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-      .nav-item:hover { background: #1a1a2e; }
-      .nav-item.active { background: #667eea; }
-      .content { flex: 1; padding: 2rem; max-width: 1200px; }
-      .card {
-        background: #1a1a2e;
-        border-radius: 12px;
-        padding: 2rem;
-        margin-bottom: 2rem;
-      }
-      .card h2 { margin-bottom: 1rem; color: #667eea; }
-      .form-group {
-        margin-bottom: 1.5rem;
-      }
-      label {
-        display: block;
-        margin-bottom: 0.5rem;
-        color: #aaa;
-      }
-      input, select {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #2a2a3e;
-        border-radius: 6px;
-        background: #16213e;
-        color: #e8e8e8;
-        font-size: 1rem;
-      }
-      button {
-        padding: 0.75rem 2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-weight: bold;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header">
-      <h1>🚀 casspeed Admin</h1>
-      <div><a href="/admin/logout" style="color: #667eea;">Logout</a></div>
-    </div>
-    <div class="main">
-      <nav class="sidebar">
-        <div class="nav-item"><a href="/admin/dashboard">📊 Dashboard</a></div>
-        <div class="nav-item active">⚙️ Server Settings</div>
-        <div class="nav-item"><a href="/admin/server/logs">📝 Logs</a></div>
-        <div class="nav-item"><a href="/admin/server/info">ℹ️ Server Info</a></div>
-      </nav>
-      <div class="content">
-        <div class="card">
-          <h2>Server Settings</h2>
-          <form method="POST">
-            <div class="form-group">
-              <label>Server Mode</label>
-              <select name="mode">
-                <option value="production">Production</option>
-                <option value="development">Development</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Port</label>
-              <input type="number" name="port" value="80">
-            </div>
-            <div class="form-group">
-              <label>Max Threads</label>
-              <input type="number" name="max_threads" value="16" min="1" max="16">
-            </div>
-            <div class="form-group">
-              <label>Default Test Duration (seconds)</label>
-              <input type="number" name="duration" value="10" min="5" max="60">
-            </div>
-            <button type="submit">Save Settings</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </body>
+<!doctype html>
+<html lang="{{.Lang}}" dir="{{.Direction}}">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>{{t "admin.legacy.server_settings"}} — CasSpeed {{t "admin.legacy.brand"}}</title>
+	<link rel="stylesheet" href="/static/css/theme-dark.css">
+	<link rel="stylesheet" href="/static/css/theme-light.css">
+	<link rel="stylesheet" href="/static/css/style.css">
+	<link rel="stylesheet" href="/static/css/admin/style.css">
+	<script src="/static/js/theme.js" defer></script>
+</head>
+<body>
+	<a class="skip-link" href="#main-content">{{t "admin.legacy.skip_content"}}</a>
+	<a class="skip-link" href="#admin-navigation">{{t "admin.legacy.skip_navigation"}}</a>
+	<header class="admin-header"><a href="{{.AdminRoot}}/">CasSpeed {{t "admin.legacy.brand"}}</a></header>
+	<div class="admin-layout">
+		<nav id="admin-navigation" class="admin-nav" aria-label="{{t "admin.legacy.navigation"}}">
+			<ul>
+				<li><a href="{{.AdminRoot}}/">{{t "admin.legacy.dashboard"}}</a></li>
+				<li><a aria-current="page" href="{{.AdminRoot}}/settings">{{t "admin.legacy.settings"}}</a></li>
+				<li><a href="{{.AdminRoot}}/info">{{t "admin.legacy.server_information"}}</a></li>
+				<li><a href="{{.AdminRoot}}/logs">{{t "admin.legacy.logs"}}</a></li>
+			</ul>
+			<form action="/server/auth/logout" method="post"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit">{{t "admin.legacy.log_out"}}</button></form>
+		</nav>
+		<main id="main-content" class="admin-content">
+			<header class="page-header"><h1 class="page-title">{{t "admin.legacy.server_settings"}}</h1></header>
+			{{if .Saved}}<p role="status">{{t "admin.legacy.settings_saved"}}</p>{{end}}
+			<section class="section-card" aria-labelledby="settings-heading">
+				<h2 id="settings-heading">{{t "admin.legacy.server_speedtest"}}</h2>
+				<form action="{{.AdminRoot}}/settings" method="post">
+					<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+					<div class="form-group"><label for="mode">{{t "admin.legacy.server_mode"}}</label><select id="mode" name="mode"><option value="production" {{if eq .Mode "production"}}selected{{end}}>{{t "admin.legacy.production"}}</option><option value="development" {{if eq .Mode "development"}}selected{{end}}>{{t "admin.legacy.development"}}</option></select></div>
+					<div class="form-group"><label for="port">{{t "admin.legacy.port"}}</label><input id="port" type="number" name="port" value="{{.Port}}" min="1" max="65535" required></div>
+					<div class="form-group"><label for="max-threads">{{t "admin.legacy.max_threads"}}</label><input id="max-threads" type="number" name="max_threads" value="{{.MaxThreads}}" min="1" max="16" required></div>
+					<div class="form-group"><label for="duration">{{t "admin.legacy.test_duration"}}</label><input id="duration" type="number" name="duration" value="{{.Duration}}" min="1" max="60" required></div>
+					<div class="form-group"><label for="max-concurrent">{{t "admin.legacy.max_concurrent"}}</label><input id="max-concurrent" type="number" name="max_concurrent" value="{{.MaxConcurrent}}" min="1" max="100" required></div>
+					<button type="submit">{{t "admin.legacy.save_settings"}}</button>
+				</form>
+			</section>
+		</main>
+	</div>
+	<footer class="site-footer">CasSpeed {{t "admin.legacy.brand"}}</footer>
+</body>
 </html>

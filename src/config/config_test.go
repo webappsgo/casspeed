@@ -17,6 +17,62 @@ func TestDefault_NotNil(t *testing.T) {
 	}
 }
 
+func TestLoadSeedsCacheURLAndKeepsCredentialsOutOfServerConfig(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "server.yml")
+	t.Setenv("CACHE_URL", "valkey://user:private@cache.example:6379/0")
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Cache.Type != "valkey" || cfg.Server.Cache.URL == "" {
+		t.Fatalf("cache config was not seeded: %#v", cfg.Server.Cache)
+	}
+	if err := Save(cfg, configPath); err != nil {
+		t.Fatal(err)
+	}
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(configBytes), "private") {
+		t.Fatal("cache credential leaked into server.yml")
+	}
+	secretBytes, err := os.ReadFile(filepath.Join(configDir, "secrets.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(secretBytes), "private") {
+		t.Fatal("cache credential missing from secrets.yml")
+	}
+	info, err := os.Stat(filepath.Join(configDir, "secrets.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("secrets.yml mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestLoadCacheURLFromSecretsOverridesEnvironment(t *testing.T) {
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "server.yml")
+	if err := os.WriteFile(configPath, []byte("server:\n  cache:\n    type: valkey\n    url: ''\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "secrets.yml"), []byte("server:\n  cache:\n    url: valkey://user:saved@cache.example:6379/0\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CACHE_URL", "valkey://user:ignored@other.example:6379/0")
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cfg.Server.Cache.URL, "saved@") || strings.Contains(cfg.Server.Cache.URL, "ignored") {
+		t.Fatalf("saved cache URL precedence failed: %q", cfg.Server.Cache.URL)
+	}
+}
+
 func TestDefault_BrandingTitle(t *testing.T) {
 	cfg := Default()
 	if cfg.Server.Branding.Title != "casspeed" {
@@ -26,8 +82,8 @@ func TestDefault_BrandingTitle(t *testing.T) {
 
 func TestDefault_AdminPath(t *testing.T) {
 	cfg := Default()
-	if cfg.Server.AdminPath != "admin" {
-		t.Errorf("AdminPath = %q, want %q", cfg.Server.AdminPath, "admin")
+	if cfg.Server.AdminPath != "administration" {
+		t.Errorf("AdminPath = %q, want %q", cfg.Server.AdminPath, "administration")
 	}
 }
 
@@ -35,6 +91,21 @@ func TestDefault_Mode(t *testing.T) {
 	cfg := Default()
 	if cfg.Server.Mode != "production" {
 		t.Errorf("Mode = %q, want %q", cfg.Server.Mode, "production")
+	}
+}
+
+func TestDefault_UsersRegistrationIsOpen(t *testing.T) {
+	cfg := Default()
+	if !cfg.Server.Users.Enabled || cfg.Server.Users.Registration.Mode != "open" || !cfg.Server.Users.Registration.RequireEmailVerification || cfg.Server.Users.Roles.Default != "user" || len(cfg.Server.Users.Roles.Available) != 2 || cfg.Server.Users.Auth.PasswordMinLength != 8 || !cfg.Server.Users.Auth.Allow2FA {
+		t.Fatalf("users config = %#v, want enabled open registration, roles, password policy and email verification", cfg.Server.Users)
+	}
+}
+
+func TestValidateRejectsUserRoleDefaultNotInAvailable(t *testing.T) {
+	cfg := Default()
+	cfg.Server.Users.Roles.Default = "moderator"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("configuration accepted an undefined default user role")
 	}
 }
 
@@ -76,11 +147,30 @@ func TestDefault_SchedulerTasks(t *testing.T) {
 
 func TestDefault_RateLimit(t *testing.T) {
 	cfg := Default()
-	if !cfg.Server.RateLimit.Enabled {
-		t.Error("RateLimit.Enabled should default to true")
+	if cfg.Server.RateLimit.Read.Requests != 120 || cfg.Server.RateLimit.Read.Window != 60 {
+		t.Errorf("Read rate limit = %#v, want 120 requests / 60s", cfg.Server.RateLimit.Read)
 	}
-	if cfg.Server.RateLimit.Requests <= 0 {
-		t.Errorf("RateLimit.Requests = %d, want > 0", cfg.Server.RateLimit.Requests)
+	if cfg.Server.RateLimit.Write.Requests != 10 || cfg.Server.RateLimit.GlobalBurst != 240 {
+		t.Errorf("write/global rate limits = %#v/%d, want 10/240", cfg.Server.RateLimit.Write, cfg.Server.RateLimit.GlobalBurst)
+	}
+}
+
+func TestDefault_I18nUsesEmbeddedLocaleRegistry(t *testing.T) {
+	cfg := Default()
+	if cfg.Server.I18n.DefaultLanguage != "en" || len(cfg.Server.I18n.AvailableLanguages) < 6 {
+		t.Fatalf("default i18n config = %#v", cfg.Server.I18n)
+	}
+	for _, language := range []string{"en", "es", "fr", "de", "it", "ar"} {
+		found := false
+		for _, available := range cfg.Server.I18n.AvailableLanguages {
+			if available == language {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("required locale %q missing from defaults", language)
+		}
 	}
 }
 
@@ -111,6 +201,33 @@ func validConfig() *Config {
 func TestValidate_ValidConfigNoError(t *testing.T) {
 	if err := validConfig().Validate(); err != nil {
 		t.Errorf("valid config failed validation: %v", err)
+	}
+}
+
+func TestValidateTrackingProviders(t *testing.T) {
+	valid := []TrackingConfig{
+		{Type: "none"}, {Type: "google", ID: "G-ABC123"},
+		{Type: "matomo", ID: "1", URL: "https://metrics.example"},
+		{Type: "piwik", ID: "2", URL: "http://metrics.example"},
+		{Type: "owa", ID: "site", URL: "https://metrics.example"},
+		{Type: "fathom", ID: "site"}, {Type: "plausible", ID: "example.org"},
+		{Type: "umami", ID: "12345678-1234-1234-1234-123456789abc", URL: "https://metrics.example"},
+		{Type: "simple"}, {Type: "cloudflare", ID: "beacon"},
+	}
+	for _, tracking := range valid {
+		if err := ValidateTracking(&tracking); err != nil {
+			t.Errorf("valid tracking config %+v: %v", tracking, err)
+		}
+	}
+	invalid := []TrackingConfig{
+		{Type: "other"}, {Type: "google", ID: "G-invalid"}, {Type: "matomo", ID: "abc", URL: "https://metrics.example"},
+		{Type: "owa", ID: "site"}, {Type: "umami", ID: "not-a-uuid", URL: "https://metrics.example"},
+		{Type: "cloudflare"}, {Type: "fathom", ID: "site", URL: "javascript:alert(1)"},
+	}
+	for _, tracking := range invalid {
+		if err := ValidateTracking(&tracking); err == nil {
+			t.Errorf("invalid tracking config accepted: %+v", tracking)
+		}
 	}
 }
 
@@ -354,6 +471,9 @@ func TestSave_RoundTrip(t *testing.T) {
 	if err := Save(original, cfgPath); err != nil {
 		t.Fatalf("Save error: %v", err)
 	}
+	if info, err := os.Stat(cfgPath); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("saved config mode = %v, err=%v, want 600", info, err)
+	}
 
 	loaded, err := Load(cfgPath)
 	if err != nil {
@@ -364,6 +484,31 @@ func TestSave_RoundTrip(t *testing.T) {
 	}
 	if loaded.Server.AdminPath != "testadmin" {
 		t.Errorf("AdminPath after round-trip = %q, want testadmin", loaded.Server.AdminPath)
+	}
+}
+
+func TestLoadSecuresExistingConfigPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "server.yml")
+	if err := os.WriteFile(path, []byte("server:\n  mode: production\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	fileInfo, err := os.Stat(path)
+	if err != nil || fileInfo.Mode().Perm() != 0600 {
+		t.Fatalf("config file mode = %v, err=%v, want 600", fileInfo, err)
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil || dirInfo.Mode().Perm() != 0700 {
+		t.Fatalf("config directory mode = %v, err=%v, want 700", dirInfo, err)
 	}
 }
 
@@ -509,5 +654,33 @@ func TestDefault_AdminEmailContainsAt(t *testing.T) {
 	cfg := Default()
 	if !strings.Contains(cfg.Server.Admin.Email, "@") {
 		t.Errorf("Admin.Email %q missing '@'", cfg.Server.Admin.Email)
+	}
+}
+
+func TestLoadOrCreateSecretsPersistsPrivateEncryptionKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.yml")
+	first, err := LoadOrCreateSecrets(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateSecrets: %v", err)
+	}
+	if len(first.EncryptionKey) != 32 || first.EncryptionKeyVersion != 1 || !validOperatorToken(first.ServerToken) || !first.ServerTokenGenerated || !first.EncryptionKeyGenerated {
+		t.Fatalf("unexpected generated secrets: key length %d, version %d, valid operator token %t, token generated %t, encryption key generated %t", len(first.EncryptionKey), first.EncryptionKeyVersion, validOperatorToken(first.ServerToken), first.ServerTokenGenerated, first.EncryptionKeyGenerated)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("secrets file mode = %o, want 600", info.Mode().Perm())
+	}
+	second, err := LoadOrCreateSecrets(path)
+	if err != nil {
+		t.Fatalf("reload secrets: %v", err)
+	}
+	if string(first.EncryptionKey) != string(second.EncryptionKey) || first.EncryptionKeyVersion != second.EncryptionKeyVersion {
+		t.Fatal("reloading secrets changed persisted key material")
+	}
+	if first.ServerToken != second.ServerToken || second.ServerTokenGenerated || second.EncryptionKeyGenerated {
+		t.Fatal("reloading secrets changed the operator token or reported it as newly generated")
 	}
 }

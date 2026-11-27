@@ -15,12 +15,12 @@ import (
 
 // Config holds update configuration
 type Config struct {
-	Enabled     bool
-	RepoOwner   string
-	RepoName    string
-	Branch      string
-	CurrentVer  string
-	BinaryPath  string
+	Enabled    bool
+	RepoOwner  string
+	RepoName   string
+	Branch     string
+	CurrentVer string
+	BinaryPath string
 }
 
 // Release represents a release version

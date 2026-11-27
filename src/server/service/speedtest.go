@@ -6,10 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"math"
+	"math/big"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -17,28 +15,46 @@ import (
 type SpeedTestService struct {
 	maxThreads int
 	chunkSize  int
+	duration   int
+	randomData []byte
 }
 
-func NewSpeedTestService(maxThreads, chunkSize int) *SpeedTestService {
+func NewSpeedTestService(maxThreads, chunkSize int, duration ...int) *SpeedTestService {
+	if maxThreads < 1 {
+		maxThreads = 4
+	}
+	if maxThreads > 16 {
+		maxThreads = 16
+	}
+	if chunkSize < 1 {
+		chunkSize = 1024 * 1024
+	}
+	if chunkSize > 16*1024*1024 {
+		chunkSize = 16 * 1024 * 1024
+	}
+	durationSeconds := 10
+	if len(duration) > 0 && duration[0] >= 1 && duration[0] <= 120 {
+		durationSeconds = duration[0]
+	}
+	randomData := make([]byte, 64*1024)
+	_, _ = rand.Read(randomData)
 	return &SpeedTestService{
 		maxThreads: maxThreads,
 		chunkSize:  chunkSize,
+		duration:   durationSeconds,
+		randomData: randomData,
 	}
 }
 
-type TestResult struct {
-	DownloadMbps float64
-	UploadMbps   float64
-	PingMs       float64
-	JitterMs     float64
-	PacketLoss   float64
+func (s *SpeedTestService) TestSettings() (durationSeconds, threads, chunkSize int) {
+	return s.duration, s.maxThreads, s.chunkSize
 }
 
 type ProgressUpdate struct {
-	Stage        string  `json:"stage"`
-	Progress     float64 `json:"progress"`
-	Speed        float64 `json:"speed"`
-	Message      string  `json:"message"`
+	Stage    string  `json:"stage"`
+	Progress float64 `json:"progress"`
+	Speed    float64 `json:"speed"`
+	Message  string  `json:"message"`
 	// Final result fields — only set when Stage == "complete"
 	TestID       string  `json:"test_id,omitempty"`
 	ShareCode    string  `json:"share_code,omitempty"`
@@ -49,198 +65,27 @@ type ProgressUpdate struct {
 	PacketLoss   float64 `json:"packet_loss,omitempty"`
 }
 
-func (s *SpeedTestService) RunTest(duration int, progressChan chan<- ProgressUpdate) (*TestResult, error) {
-	result := &TestResult{}
-
-	progressChan <- ProgressUpdate{Stage: "ping", Progress: 0, Message: "Starting ping test"}
-	ping, jitter, loss := s.testPing()
-	result.PingMs = ping
-	result.JitterMs = jitter
-	result.PacketLoss = loss
-	progressChan <- ProgressUpdate{Stage: "ping", Progress: 1.0, Speed: ping, Message: "Ping test complete"}
-
-	progressChan <- ProgressUpdate{Stage: "download", Progress: 0, Message: "Starting download test"}
-	downloadSpeed := s.testDownload(duration, progressChan)
-	result.DownloadMbps = downloadSpeed
-	progressChan <- ProgressUpdate{Stage: "download", Progress: 1.0, Speed: downloadSpeed, Message: "Download test complete"}
-
-	progressChan <- ProgressUpdate{Stage: "upload", Progress: 0, Message: "Starting upload test"}
-	uploadSpeed := s.testUpload(duration, progressChan)
-	result.UploadMbps = uploadSpeed
-	progressChan <- ProgressUpdate{Stage: "upload", Progress: 1.0, Speed: uploadSpeed, Message: "Upload test complete"}
-
-	progressChan <- ProgressUpdate{Stage: "complete", Progress: 1.0, Message: "Test complete"}
-
-	return result, nil
-}
-
-func (s *SpeedTestService) testPing() (avgMs, jitterMs, packetLoss float64) {
-	const samples = 10
-	var pings []float64
-	var successful int
-
-	for i := 0; i < samples; i++ {
-		start := time.Now()
-		time.Sleep(1 * time.Millisecond)
-		elapsed := time.Since(start).Milliseconds()
-		
-		if elapsed > 0 {
-			pings = append(pings, float64(elapsed))
-			successful++
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	if len(pings) == 0 {
-		return 0, 0, 100
-	}
-
-	var sum float64
-	for _, p := range pings {
-		sum += p
-	}
-	avgMs = sum / float64(len(pings))
-
-	var variance float64
-	for _, p := range pings {
-		variance += (p - avgMs) * (p - avgMs)
-	}
-	jitterMs = math.Sqrt(variance / float64(len(pings)))
-
-	packetLoss = float64(samples-successful) / float64(samples) * 100
-
-	return avgMs, jitterMs, packetLoss
-}
-
-func (s *SpeedTestService) testDownload(durationSec int, progressChan chan<- ProgressUpdate) float64 {
-	var totalBytes int64
-	var mu sync.Mutex
-	startTime := time.Now()
-	endTime := startTime.Add(time.Duration(durationSec) * time.Second)
-
-	numThreads := s.maxThreads
-	var wg sync.WaitGroup
-
-	for i := 0; i < numThreads; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			buffer := make([]byte, s.chunkSize)
-			for time.Now().Before(endTime) {
-				n := len(buffer)
-				mu.Lock()
-				totalBytes += int64(n)
-				mu.Unlock()
-				time.Sleep(10 * time.Millisecond)
-			}
-		}()
-	}
-
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	go func() {
-		for range ticker.C {
-			if time.Now().After(endTime) {
-				return
-			}
-			elapsed := time.Since(startTime).Seconds()
-			progress := elapsed / float64(durationSec)
-			if progress > 1.0 {
-				progress = 1.0
-			}
-			mu.Lock()
-			currentBytes := totalBytes
-			mu.Unlock()
-			speed := (float64(currentBytes) * 8) / elapsed / 1_000_000
-			progressChan <- ProgressUpdate{
-				Stage:    "download",
-				Progress: progress,
-				Speed:    speed,
-				Message:  fmt.Sprintf("%.1f Mbps", speed),
-			}
-		}
-	}()
-
-	wg.Wait()
-	elapsed := time.Since(startTime).Seconds()
-	mbps := (float64(totalBytes) * 8) / elapsed / 1_000_000
-
-	return mbps
-}
-
-func (s *SpeedTestService) testUpload(durationSec int, progressChan chan<- ProgressUpdate) float64 {
-	var totalBytes int64
-	var mu sync.Mutex
-	startTime := time.Now()
-	endTime := startTime.Add(time.Duration(durationSec) * time.Second)
-
-	numThreads := s.maxThreads
-	var wg sync.WaitGroup
-
-	for i := 0; i < numThreads; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			buffer := make([]byte, s.chunkSize)
-			for time.Now().Before(endTime) {
-				n := len(buffer)
-				mu.Lock()
-				totalBytes += int64(n)
-				mu.Unlock()
-				time.Sleep(10 * time.Millisecond)
-			}
-		}()
-	}
-
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
-	go func() {
-		for range ticker.C {
-			if time.Now().After(endTime) {
-				return
-			}
-			elapsed := time.Since(startTime).Seconds()
-			progress := elapsed / float64(durationSec)
-			if progress > 1.0 {
-				progress = 1.0
-			}
-			mu.Lock()
-			currentBytes := totalBytes
-			mu.Unlock()
-			speed := (float64(currentBytes) * 8) / elapsed / 1_000_000
-			progressChan <- ProgressUpdate{
-				Stage:    "upload",
-				Progress: progress,
-				Speed:    speed,
-				Message:  fmt.Sprintf("%.1f Mbps", speed),
-			}
-		}
-	}()
-
-	wg.Wait()
-	elapsed := time.Since(startTime).Seconds()
-	mbps := (float64(totalBytes) * 8) / elapsed / 1_000_000
-
-	return mbps
-}
-
 func (s *SpeedTestService) GenerateRandomData(w http.ResponseWriter, size int) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	buffer := make([]byte, 8192)
 	remaining := size
-
 	for remaining > 0 {
-		toWrite := remaining
-		if toWrite > len(buffer) {
-			toWrite = len(buffer)
+		for offset := 0; offset < len(s.randomData) && remaining > 0; offset += 8192 {
+			toWrite := len(s.randomData) - offset
+			if toWrite > 8192 {
+				toWrite = 8192
+			}
+			if toWrite > remaining {
+				toWrite = remaining
+			}
+			if _, err := w.Write(s.randomData[offset : offset+toWrite]); err != nil {
+				return
+			}
+			remaining -= toWrite
 		}
-		rand.Read(buffer[:toWrite])
-		w.Write(buffer[:toWrite])
-		remaining -= toWrite
 	}
 }
 
@@ -262,14 +107,18 @@ func (s *SpeedTestService) ConsumeUploadData(r *http.Request) (int64, error) {
 	return totalBytes, nil
 }
 
-func GenerateShareCode() string {
+func GenerateShareCode() (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 10)
-	rand.Read(b)
-	for i := range b {
-		b[i] = charset[int(b[i])%len(charset)]
+	limit := big.NewInt(int64(len(charset)))
+	code := make([]byte, 8)
+	for i := range code {
+		index, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			return "", err
+		}
+		code[i] = charset[index.Int64()]
 	}
-	return string(b)
+	return string(code), nil
 }
 
 func HashIP(ip string) string {

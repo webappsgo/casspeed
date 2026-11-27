@@ -2,12 +2,18 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/casapps/casspeed/src/config"
 	"github.com/casapps/casspeed/src/server/model"
 	"github.com/casapps/casspeed/src/server/store"
 )
@@ -153,6 +159,170 @@ func TestMarkSetupComplete_SetsTrue(t *testing.T) {
 	SetSetupComplete(false) // cleanup
 }
 
+func TestLoadOrCreateSetupTokenPersistsOnlyHash(t *testing.T) {
+	SetSetupComplete(false)
+	path := filepath.Join(t.TempDir(), "config", "setup_token.txt")
+	token, created, err := LoadOrCreateSetupToken(path)
+	if err != nil || !created || len(token) != 32 {
+		t.Fatalf("first load = (%q, %v, %v), want generated token", token, created, err)
+	}
+	stored, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte(token))
+	if string(stored) != hex.EncodeToString(want[:])+"\n" {
+		t.Fatal("setup token file does not contain only the SHA-256 hash")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("token file mode = %o, want 600", info.Mode().Perm())
+	}
+
+	SetSetupComplete(false)
+	reloaded, created, err := LoadOrCreateSetupToken(path)
+	if err != nil || created || reloaded != "" || !ValidateSetupToken(token) {
+		t.Fatalf("reload = (%q, %v, %v), token validation = %v", reloaded, created, err, ValidateSetupToken(token))
+	}
+	SetSetupComplete(false)
+}
+
+func TestSetupTokenExchangeIsOneTime(t *testing.T) {
+	SetSetupComplete(false)
+	token, err := GenerateSetupToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/admin/setup/token", nil)
+	response := httptest.NewRecorder()
+	if err := IssueSetupSession(response, request); err != nil {
+		t.Fatalf("first session issue: %v", err)
+	}
+	if err := IssueSetupSession(httptest.NewRecorder(), request); err == nil {
+		t.Fatal("second session issue should fail")
+	}
+	if !ValidateSetupToken(token) {
+		t.Fatal("one-time exchange should not invalidate token hash before setup completion")
+	}
+	MarkSetupComplete()
+	if ValidateSetupToken(token) {
+		t.Fatal("completed setup must invalidate token")
+	}
+	SetSetupComplete(false)
+}
+
+func TestSaveSettingsPersistsValidatedValues(t *testing.T) {
+	cfg := config.Default()
+	path := filepath.Join(t.TempDir(), "server.yml")
+	handler := NewHandler(nil)
+	handler.ConfigureSettings(cfg, path)
+	port, threads, duration, concurrent := 65432, 8, 20, 5
+	update := settingsUpdate{Server: serverSettingsUpdate{Port: &port, Mode: "development"}, Test: testSettingsUpdate{MaxThreads: &threads, DefaultDuration: &duration, MaxConcurrent: &concurrent}}
+	if err := handler.saveSettings(update); err != nil {
+		t.Fatalf("saveSettings: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configPort(loaded) != port || loaded.Server.Mode != "development" || loaded.Test.MaxThreads != threads || loaded.Test.DefaultDuration != duration || loaded.Test.MaxConcurrent != concurrent {
+		t.Fatalf("saved config = %#v, want updated server and test settings", loaded)
+	}
+	invalidPort := 70000
+	if err := handler.saveSettings(settingsUpdate{Server: serverSettingsUpdate{Port: &invalidPort}}); err != errInvalidSettings {
+		t.Fatalf("invalid setting error = %v, want validation error", err)
+	}
+	if configPort(cfg) != port {
+		t.Fatal("invalid update changed in-memory config")
+	}
+}
+
+func TestSettingsAPIAndFormHandlers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.yml")
+	h := NewHandler(nil)
+	h.ConfigureSettings(config.Default(), path)
+
+	get := httptest.NewRecorder()
+	h.GetSettings(get, httptest.NewRequest(http.MethodGet, "/api/v1/server/admin/settings", nil))
+	var settings map[string]any
+	if get.Code != http.StatusOK || json.Unmarshal(get.Body.Bytes(), &settings) != nil || settings["server"] == nil || settings["test"] == nil {
+		t.Fatalf("settings API response = %d %s", get.Code, get.Body.String())
+	}
+
+	invalid := httptest.NewRequest(http.MethodPut, "/api/v1/server/admin/settings", strings.NewReader(`{"unexpected":true}`))
+	invalidResponse := httptest.NewRecorder()
+	h.UpdateSettings(invalidResponse, invalid)
+	if invalidResponse.Code != http.StatusBadRequest {
+		t.Fatalf("unknown settings field status = %d", invalidResponse.Code)
+	}
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/server/admin/settings", strings.NewReader(`{"server":{"port":65431,"mode":"development"},"test":{"max_threads":4,"default_duration":12,"max_concurrent":3}}`))
+	updateResponse := httptest.NewRecorder()
+	h.UpdateSettings(updateResponse, update)
+	if updateResponse.Code != http.StatusOK || !strings.Contains(updateResponse.Body.String(), `"port":65431`) {
+		t.Fatalf("settings update response = %d %s", updateResponse.Code, updateResponse.Body.String())
+	}
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/server/admin/settings", nil)
+	pageResponse := httptest.NewRecorder()
+	h.ServerSettings(pageResponse, pageRequest)
+	if pageResponse.Code != http.StatusOK || !strings.Contains(pageResponse.Body.String(), `name="csrf_token"`) {
+		t.Fatalf("settings page response = %d %s", pageResponse.Code, pageResponse.Body.String())
+	}
+	badCSRF := httptest.NewRequest(http.MethodPost, "/server/admin/settings", strings.NewReader("port=65432"))
+	badCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	badCSRFResponse := httptest.NewRecorder()
+	h.ServerSettings(badCSRFResponse, badCSRF)
+	if badCSRFResponse.Code != http.StatusForbidden {
+		t.Fatalf("settings invalid CSRF status = %d", badCSRFResponse.Code)
+	}
+	form := "csrf_token=session&port=65432&mode=production&max_threads=4&duration=10&max_concurrent=2"
+	goodCSRF := httptest.NewRequest(http.MethodPost, "/server/admin/settings", strings.NewReader(form))
+	goodCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	goodCSRF.AddCookie(&http.Cookie{Name: "admin_session", Value: "session"})
+	goodCSRFResponse := httptest.NewRecorder()
+	h.ServerSettings(goodCSRFResponse, goodCSRF)
+	if goodCSRFResponse.Code != http.StatusSeeOther {
+		t.Fatalf("settings form response = %d %s", goodCSRFResponse.Code, goodCSRFResponse.Body.String())
+	}
+}
+
+func TestAdminPagesRenderDescriptionsAndDashboard(t *testing.T) {
+	st, err := store.NewSQLiteStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	h := NewHandler(st)
+	h.ConfigureSettings(config.Default(), filepath.Join(t.TempDir(), "server.yml"), "1.2.3", t.TempDir())
+	pages := []struct {
+		name string
+		hand func(http.ResponseWriter, *http.Request)
+	}{
+		{"profile", h.Profile}, {"preferences", h.Preferences}, {"notifications", h.Notifications},
+		{"audit", h.ServerAuditLogs}, {"backup", h.ServerBackup}, {"updates", h.ServerUpdates},
+		{"ssl", h.ServerSSL}, {"email", h.ServerEmail}, {"scheduler", h.ServerScheduler},
+		{"metrics", h.ServerMetrics}, {"tor", h.NetworkTor}, {"geoip", h.NetworkGeoIP},
+		{"auth", h.SecurityAuth}, {"tokens", h.SecurityTokens}, {"users", h.ServerUsers},
+	}
+	for _, page := range pages {
+		t.Run(page.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			page.hand(response, httptest.NewRequest(http.MethodGet, "/server/admin/"+page.name, nil))
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<main") || !strings.Contains(response.Body.String(), "<h1") {
+				t.Fatalf("page response = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	dashboard := httptest.NewRecorder()
+	h.Dashboard(dashboard, httptest.NewRequest(http.MethodGet, "/server/admin/", nil))
+	if dashboard.Code != http.StatusOK || !strings.Contains(dashboard.Body.String(), "1.2.3") || !strings.Contains(dashboard.Body.String(), "Online") {
+		t.Fatalf("dashboard response = %d %s", dashboard.Code, dashboard.Body.String())
+	}
+}
+
 // ---- ValidateSetupData tests --------------------------------------------
 
 func validSetupData() *SetupWizardData {
@@ -247,8 +417,8 @@ func TestHandler_ServerSettings(t *testing.T) {
 	req := httptest.NewRequest("GET", "/server/admin/config/settings", nil)
 	rec := httptest.NewRecorder()
 	h.ServerSettings(rec, req)
-	if rec.Code != http.StatusOK && rec.Code != http.StatusInternalServerError {
-		t.Errorf("unexpected status %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("unconfigured settings status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 

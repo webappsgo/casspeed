@@ -12,12 +12,12 @@ import (
 
 // CertInfo represents SSL certificate information
 type CertInfo struct {
-	CertPath   string
-	KeyPath    string
-	Source     string    // "system", "app-managed", "user-provided"
-	ExpiresAt  time.Time
-	IsExpired  bool
-	DaysLeft   int
+	CertPath  string
+	KeyPath   string
+	Source    string // "system", "app-managed", "user-provided"
+	ExpiresAt time.Time
+	IsExpired bool
+	DaysLeft  int
 }
 
 // Manager handles SSL/TLS certificate management

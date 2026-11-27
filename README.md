@@ -15,7 +15,8 @@ Run the server on your own infrastructure and test against that server. Anonymou
 
 - Browser tests with live progress and measurements for latency, jitter, packet loss, download, and upload
 - Anonymous testing and registered-user history
-- Private device and API-token management
+- Private device, API-token, and account-security management, including TOTP and passkeys
+- Personal-data export and account deletion controls
 - Explicitly shared results with PNG and SVG exports
 - A command-line client with an interactive terminal interface
 - Optional Tor v3 onion services and I2P eepsite support
@@ -102,7 +103,7 @@ Unshared results require their originating anonymous browser session or owning a
 
 ## Other
 
-Public information and help pages are served below `/server/`. The browser interface includes account, device, token, test-history, and administration pages. Read-only GraphQL is available at `/api/v1/server/graphql`, with a browser explorer at `/server/docs/graphql`. MCP clients can connect to `/api/v1/server/mcp` using a scoped bearer token. Optional Tor and I2P services have configuration pages under `/server/{admin_path}/network/`; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/).
+Public information and help pages are served below `/server/`. The browser interface includes account, device, token, security, privacy-rights, test-history, and administration pages. Read-only GraphQL is available at `/api/v1/server/graphql`, with a browser explorer at `/server/docs/graphql`. MCP clients can connect to `/api/v1/server/mcp` using a scoped bearer token. Optional Tor and I2P services have configuration pages under `/server/{admin_path}/network/`; see the [integration guide](https://casapps-casspeed.readthedocs.io/en/latest/integrations/).
 
 See the [translation guide](https://casapps-casspeed.readthedocs.io/en/latest/translating/) to contribute interface translations.
 

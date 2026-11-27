@@ -67,7 +67,7 @@ func TestShareImageGetShareSVG(t *testing.T) {
 	if recorder.Header().Get("Content-Type") != "image/svg+xml" || recorder.Header().Get("Cache-Control") != "public, max-age=3600" {
 		t.Errorf("image headers = %#v", recorder.Header())
 	}
-	for _, text := range []string{"<svg width=\"1200\" height=\"630\"", "Download: 42.5 Mbps", "Upload: 10.0 Mbps", "Ping: 8.2 ms", "2024-06-07 08:09:10"} {
+	for _, text := range []string{"<svg width=\"1200\" height=\"630\"", ">DOWNLOAD<", ">42.5 MBPS<", ">UPLOAD<", ">10.0 MBPS<", ">PING<", ">8.2 MS<", ">JITTER<", ">PACKET LOSS<", "2024-06-07 08:09:10 UTC"} {
 		if !strings.Contains(recorder.Body.String(), text) {
 			t.Errorf("SVG response is missing %q", text)
 		}

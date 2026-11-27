@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/casapps/casspeed/src/metrics"
 	"github.com/go-co-op/gocron/v2"
 	"github.com/google/uuid"
 )
@@ -17,6 +18,7 @@ type Task struct {
 	Schedule    string
 	Handler     func(context.Context) error
 	Enabled     bool
+	Running     bool
 	LastRun     time.Time
 	LastStatus  string
 	LastError   string
@@ -73,18 +75,24 @@ func (s *Scheduler) AddTask(task *Task) error {
 	}
 
 	if task.Enabled {
-		t := task
-		job, err := s.s.NewJob(
-			gocron.CronJob(task.Schedule, false),
-			gocron.NewTask(func() { s.runTask(t) }),
-		)
-		if err != nil {
-			return fmt.Errorf("invalid schedule %s: %w", task.Schedule, err)
+		if err := s.addJobLocked(task); err != nil {
+			return err
 		}
-		s.jobIDs[task.ID] = job.ID()
 	}
 
 	s.tasks[task.ID] = task
+	return nil
+}
+
+func (s *Scheduler) addJobLocked(task *Task) error {
+	job, err := s.s.NewJob(
+		gocron.CronJob(task.Schedule, false),
+		gocron.NewTask(func() { s.runTask(task) }),
+	)
+	if err != nil {
+		return fmt.Errorf("invalid schedule %s: %w", task.Schedule, err)
+	}
+	s.jobIDs[task.ID] = job.ID()
 	return nil
 }
 
@@ -148,41 +156,79 @@ func (s *Scheduler) RunTaskNow(taskID string) error {
 
 // runTask executes a task handler with timeout and updates its status.
 func (s *Scheduler) runTask(task *Task) {
-	if !task.Enabled {
+	s.mu.Lock()
+	if !task.Enabled || task.Running || s.tasks[task.ID] != task {
+		s.mu.Unlock()
 		return
 	}
-
-	task.LastRun = time.Now()
+	task.Running = true
+	task.LastRun = time.Now().UTC()
+	s.mu.Unlock()
+	taskName := task.Name
+	if taskName == "" {
+		taskName = task.ID
+	}
+	metrics.SchedulerTaskStarted(taskName)
 
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Minute)
 	defer cancel()
-
-	err := task.Handler(ctx)
+	var taskErr error
+	started := time.Now()
+	defer func() {
+		status := "success"
+		if taskErr != nil {
+			status = "error"
+		}
+		metrics.SchedulerTaskFinished(taskName)
+		metrics.RecordScheduler(taskName, status, time.Since(started).Seconds())
+	}()
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				taskErr = fmt.Errorf("task panicked: %v", recovered)
+			}
+		}()
+		taskErr = task.Handler(ctx)
+	}()
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if err != nil {
+	if s.tasks[task.ID] != task {
+		s.mu.Unlock()
+		return
+	}
+	task.Running = false
+	if taskErr != nil {
 		task.LastStatus = "failed"
-		task.LastError = err.Error()
+		task.LastError = taskErr.Error()
 		task.FailCount++
-
-		if task.RetryOnFail && task.FailCount < task.MaxRetries {
+		retry := task.RetryOnFail && task.FailCount < task.MaxRetries
+		s.mu.Unlock()
+		if retry {
 			go s.retryTask(task)
 		}
+		return
 	} else {
 		task.LastStatus = "success"
 		task.LastError = ""
 		task.RunCount++
 		task.FailCount = 0
 	}
+	s.mu.Unlock()
 }
 
 // retryTask retries a failed task after the configured delay.
 func (s *Scheduler) retryTask(task *Task) {
-	time.Sleep(task.RetryDelay)
-
-	if task.FailCount < task.MaxRetries {
+	timer := time.NewTimer(task.RetryDelay)
+	defer timer.Stop()
+	select {
+	case <-s.ctx.Done():
+		return
+	case <-timer.C:
+	}
+	s.mu.RLock()
+	retry := s.tasks[task.ID] == task && task.Enabled && task.FailCount < task.MaxRetries
+	s.mu.RUnlock()
+	if retry {
 		s.runTask(task)
 	}
 }
@@ -208,6 +254,12 @@ func (s *Scheduler) EnableTask(taskID string) error {
 		return fmt.Errorf("task %s not found", taskID)
 	}
 
+	if task.Enabled {
+		return nil
+	}
+	if err := s.addJobLocked(task); err != nil {
+		return err
+	}
 	task.Enabled = true
 	return nil
 }
@@ -222,6 +274,13 @@ func (s *Scheduler) DisableTask(taskID string) error {
 		return fmt.Errorf("task %s not found", taskID)
 	}
 
+	if !task.Enabled {
+		return nil
+	}
+	if jobID, ok := s.jobIDs[taskID]; ok {
+		s.s.RemoveJob(jobID)
+		delete(s.jobIDs, taskID)
+	}
 	task.Enabled = false
 	return nil
 }
@@ -237,6 +296,7 @@ func (s *Scheduler) GetStatus() map[string]interface{} {
 			"id":          task.ID,
 			"name":        task.Name,
 			"enabled":     task.Enabled,
+			"running":     task.Running,
 			"last_run":    task.LastRun,
 			"last_status": task.LastStatus,
 			"last_error":  task.LastError,

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/casapps/casspeed/src/config"
 )
 
 // captureStdout captures stdout output during f() execution
@@ -22,6 +25,21 @@ func captureStdout(f func()) string {
 	var buf bytes.Buffer
 	io.Copy(&buf, r)
 	return buf.String()
+}
+
+func captureOutput(f func()) (string, string) {
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	stdoutRead, stdoutWrite, _ := os.Pipe()
+	stderrRead, stderrWrite, _ := os.Pipe()
+	os.Stdout, os.Stderr = stdoutWrite, stderrWrite
+	f()
+	stdoutWrite.Close()
+	stderrWrite.Close()
+	os.Stdout, os.Stderr = oldStdout, oldStderr
+	var stdout, stderr bytes.Buffer
+	io.Copy(&stdout, stdoutRead)
+	io.Copy(&stderr, stderrRead)
+	return stdout.String(), stderr.String()
 }
 
 func TestResolveColorMode(t *testing.T) {
@@ -326,13 +344,18 @@ func TestHandleUpdate_BranchNoArgs(t *testing.T) {
 // ---- showStatusInfo test (server not running — graceful error path) -----
 
 func TestShowStatusInfo_NotRunning(t *testing.T) {
-	out := captureStdout(func() { showStatusInfo("casspeed") })
-	if out == "" {
-		t.Error("status output should not be empty")
+	cfg := &config.Config{}
+	cfg.Server.Port = 1
+	var status int
+	stdout, stderr := captureOutput(func() { status = showStatusInfo("casspeed", cfg) })
+	if stdout != "" {
+		t.Errorf("unhealthy status must not be written to stdout: %q", stdout)
 	}
-	// When server is not running, expect the "not responding" message
-	if !strings.Contains(out, "Status") {
-		t.Errorf("status output missing 'Status': %q", out)
+	if !strings.Contains(stderr, "not responding") {
+		t.Errorf("status error output missing reason: %q", stderr)
+	}
+	if status != 1 {
+		t.Errorf("unhealthy status exit code = %d, want 1", status)
 	}
 }
 
@@ -351,4 +374,137 @@ func TestPrintBanner_NoColor(t *testing.T) {
 		}
 	})
 	_ = out
+}
+
+func TestRunCLIHandlesNonServerCommandsAndConfigurationErrors(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	tests := []struct {
+		name string
+		args []string
+		want int
+		text string
+	}{
+		{name: "help", args: []string{"--help"}, text: "--version"},
+		{name: "version", args: []string{"--version"}, text: Version},
+		{name: "shell help", args: []string{"--shell", "help"}, text: "completions"},
+		{name: "service help", args: []string{"--service", "help"}, text: "start"},
+		{name: "maintenance mode", args: []string{"--maintenance", "mode", "development"}, text: "development"},
+		{name: "update branch", args: []string{"--update", "branch", "beta"}, text: "beta"},
+		{name: "daemon rejection", args: []string{"--daemon"}, want: 1, text: "not supported"},
+		{name: "invalid mode", args: []string{"--mode", "unknown"}, want: 1, text: "Error:"},
+		{name: "unknown flag", args: []string{"--unknown"}, want: 2, text: "flag provided but not defined"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stdout, stderr := captureOutput(func() {
+				if code := runCLI(test.args); code != test.want {
+					t.Errorf("runCLI() = %d, want %d", code, test.want)
+				}
+			})
+			output := stdout + stderr
+			if test.text != "" && !strings.Contains(output, test.text) {
+				t.Errorf("CLI output %q does not contain %q", output, test.text)
+			}
+		})
+	}
+}
+
+func TestRunCLIReturnsFailureForInvalidConfigFile(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "server.yml"), []byte("server: [invalid\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{
+		"--config", configDir,
+		"--data", filepath.Join(t.TempDir(), "data"),
+		"--cache", filepath.Join(t.TempDir(), "cache"),
+		"--log", filepath.Join(t.TempDir(), "log"),
+		"--backup", filepath.Join(t.TempDir(), "backup"),
+	}
+	_, stderr := captureOutput(func() {
+		if code := runCLI(args); code != 1 {
+			t.Errorf("runCLI() = %d, want 1", code)
+		}
+	})
+	if !strings.Contains(stderr, "Error loading configuration:") {
+		t.Fatalf("invalid configuration error = %q", stderr)
+	}
+}
+
+func TestRunCLIReportsPathAndConfigValidationFailures(t *testing.T) {
+	makeArgs := func(root string, pidPath string) []string {
+		return []string{
+			"--config", filepath.Join(root, "config"),
+			"--data", filepath.Join(root, "data"),
+			"--cache", filepath.Join(root, "cache"),
+			"--log", filepath.Join(root, "log"),
+			"--backup", filepath.Join(root, "backup"),
+			"--pid", pidPath,
+		}
+	}
+	t.Run("directory creation failure", func(t *testing.T) {
+		root := t.TempDir()
+		blocked := filepath.Join(root, "blocked")
+		if err := os.WriteFile(blocked, []byte("file"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, stderr := captureOutput(func() {
+			if code := runCLI(makeArgs(root, filepath.Join(blocked, "server.pid"))); code != 1 {
+				t.Errorf("runCLI() = %d, want 1", code)
+			}
+		})
+		if !strings.Contains(stderr, "Error creating directories:") {
+			t.Fatalf("path creation error = %q", stderr)
+		}
+	})
+	t.Run("configuration validation failure", func(t *testing.T) {
+		root := t.TempDir()
+		configDir := filepath.Join(root, "config")
+		if err := os.MkdirAll(configDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, "server.yml"), []byte("server:\n  mode: invalid\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, stderr := captureOutput(func() {
+			if code := runCLI(makeArgs(root, filepath.Join(root, "run", "server.pid"))); code != 1 {
+				t.Errorf("runCLI() = %d, want 1", code)
+			}
+		})
+		if !strings.Contains(stderr, "Configuration error:") {
+			t.Fatalf("configuration validation error = %q", stderr)
+		}
+	})
+}
+
+func TestRunCLIReportsPIDWriteFailureAfterStartupValidation(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Save(config.Default(), filepath.Join(configDir, "server.yml")); err != nil {
+		t.Fatal(err)
+	}
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{
+		"--config", configDir,
+		"--data", dataDir,
+		"--cache", filepath.Join(root, "cache"),
+		"--log", filepath.Join(root, "log"),
+		"--backup", filepath.Join(root, "backup"),
+		"--pid", dataDir,
+	}
+	t.Setenv("NO_COLOR", "1")
+	_, stderr := captureOutput(func() {
+		if code := runCLI(args); code != 1 {
+			t.Errorf("runCLI() = %d, want 1", code)
+		}
+	})
+	if !strings.Contains(stderr, "PID file error:") {
+		t.Fatalf("PID error = %q", stderr)
+	}
 }

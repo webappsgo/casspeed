@@ -21,6 +21,7 @@ api_version: v1
 - Test duration is configurable, with a default of 10 seconds per phase.
 - Let anonymous visitors run tests. Anonymous results are retained for a configurable period, 30 days by default; anonymous visitors cannot keep account history.
 - Let registered users keep test history, associate tests with named devices, and use API tokens for automation.
+- Let registered users protect their accounts with TOTP or passkeys, use one-time recovery codes, export their personal data, and delete their account.
 - Let a test owner, including an anonymous visitor for the active session's result, explicitly create a shareable result page and export it as PNG or SVG. Shared pages provide social preview metadata.
 - PNG and SVG exports use the same styling as the shared result page.
 - Provide a command-line client with an interactive terminal interface and live test progress.
@@ -31,14 +32,14 @@ api_version: v1
 ### Roles & permissions
 
 - **Anonymous visitor:** run tests and view their immediate results in the originating browser session; may explicitly create a share link; cannot retain account history.
-- **Regular user:** manage their own profile, devices, API tokens, and test history; create and manage shares for tests they own.
+- **Regular user:** manage their own profile, account security, devices, API tokens, test history, and personal-data export or deletion; create and manage shares for tests they own.
 - **Server admin:** configure and administer the service using the mandatory server administration features in AI.md.
 - Users cannot read or change another user's private account data, devices, tokens, or history.
 
 ### Data model & sensitivity
 
 - **Speed test:** identifier, optional user and device association, timestamp, download/upload Mbps, ping/jitter milliseconds, packet loss, hashed client IP, user agent, server identifier, optional share code, and share-view count. Results may be anonymous or associated with an account. Unshared results are visible only to the originating anonymous session or owning account; shared results expose only fields allowed by the owner's preference.
-- **User:** identifier, username, email address, public-profile visibility, and whether the username may appear on shared results. Account email and non-public profile fields are private. Public profile fields follow the profile visibility controls required by AI.md PART 34; the PART 34 default is public, and a user may make their profile private.
+- **User:** identifier, username, email address, public-profile visibility, and whether the username may appear on shared results. Account email and non-public profile fields are private. Passwords, TOTP secrets, passkey credentials, and recovery codes are protected authentication data. Public profile fields follow the profile visibility controls required by AI.md PART 34; the PART 34 default is public, and a user may make their profile private.
 - **Device:** identifier, owning user, user-defined name, and last-seen time. Device records are private to their owner.
 - **API token:** identifier, owning user, name, hashed user token, and last-used time. The raw token is a secret and is never stored or shown again after creation. Tokens follow the format required by AI.md PART 11.
 - **Share:** an eight-character base62 code associated with a result; valid only while the result exists. A share may expose only the result fields permitted by the owner's sharing preference.
