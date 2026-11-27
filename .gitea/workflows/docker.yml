@@ -173,7 +173,7 @@ jobs:
               exit 1
             fi
             BODY=$(curl -q -fsS --max-time 3 -H 'Accept: application/json' "http://127.0.0.1:${PORT}/server/healthz" 2>/dev/null || true)
-            STATE=$(printf '%s' "$BODY" | sed -n 's/.*"tor":{[^}]*"status":"\([^"]*\)".*/\1/p')
+            STATE=$(printf '%s' "$BODY" | jq -r '.features.tor.status // empty' 2>/dev/null || true)
             case "$STATE" in
               healthy) break ;;
               error) docker logs "$CONTAINER_NAME"; exit 1 ;;
@@ -325,7 +325,7 @@ jobs:
               exit 1
             fi
             BODY=$(curl -q -fsS --max-time 3 -H 'Accept: application/json' "http://127.0.0.1:${PORT}/server/healthz" 2>/dev/null || true)
-            STATE=$(printf '%s' "$BODY" | sed -n 's/.*"tor":{[^}]*"status":"\([^"]*\)".*/\1/p')
+            STATE=$(printf '%s' "$BODY" | jq -r '.features.tor.status // empty' 2>/dev/null || true)
             case "$STATE" in
               healthy) break ;;
               error) docker logs "$CONTAINER_NAME"; exit 1 ;;
