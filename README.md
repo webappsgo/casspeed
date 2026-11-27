@@ -121,11 +121,10 @@ Go commands run in the `casjaysdev/go:latest` toolchain container. Do not build 
 ### Build and test
 
 ```sh
-make dev       # Quick local server and CLI builds in the OS temp directory
 make build     # Server and CLI for all eight OS/architecture combinations
 make test      # Vet, unit tests, and coverage gate
-make lint      # Vet and static analysis
 make docker    # Multi-architecture image build
+make release   # Build release artifacts
 ```
 
 See the [development guide](https://casapps-casspeed.readthedocs.io/en/latest/development/) for source layout and contribution workflow.

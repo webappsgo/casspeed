@@ -66,14 +66,6 @@ server:
   mode: production
   admin_path: administration
   api_version: v1
-  branding:
-    title: CasSpeed
-    tagline: A privacy-respecting speed test
-    description: A self-hosted, privacy-respecting internet speed testing service.
-    content:
-      about: ""
-      privacy: ""
-      terms: ""
   users:
     enabled: true
     registration:
@@ -177,8 +169,6 @@ server:
     id: ""
     url: ""
 web:
-  ui:
-    theme: dark
   cors: "*"
   llms:
     include_endpoints: true
@@ -194,6 +184,31 @@ test:
   timeout: 60
 ```
 
+Branding, SEO, and the default theme belong in the `yaml.d/branding.yml` drop-in, not the generated `server.yml`. Create this file under the configuration directory when you want to change these defaults:
+
+```yaml
+server:
+  branding:
+    title: CasSpeed
+    tagline: A privacy-respecting speed test
+    description: A self-hosted, privacy-respecting internet speed testing service.
+    content:
+      about: ""
+      privacy: ""
+      terms: ""
+  seo:
+    keywords: []
+    author: ""
+    og_image: ""
+    twitter_handle: ""
+web:
+  ui:
+    theme: dark
+    accent: ""
+```
+
+The `branding.yml` file also accepts the full `server.seo` settings. Logo, favicon, and OpenGraph image values can be HTTPS URLs, `data:` URIs, or filenames in `{config_dir}/assets/`; empty values use the embedded defaults. Keep the file private (`0600`). The setup flow and administration interface write branding changes to this file.
+
 ## Configuration sections
 
 The YAML example above highlights commonly configured values; it is not the full schema. Configuration is merged from built-in defaults, `server.yml`, `yaml.d/*.yml` in filename order, and then `secrets.yml`. The main key groups are:
@@ -202,7 +217,7 @@ The YAML example above highlights commonly configured values; it is not the full
 |---|---|
 | `server.address`, `server.port`, `server.fqdn`, `server.api_version`, `server.baseurl`, `server.mode`, `server.pidfile`, `server.daemonize` | This node's listener and runtime identity |
 | `server.database`, `server.cache`, `server.ssl`, `server.trusted_proxies`, `server.cluster` | Storage, cache, TLS, proxy trust, and cluster settings |
-| `server.branding`, `server.seo`, `web.ui` | Site title, content, metadata, and theme |
+| `server.branding`, `server.seo`, `web.ui.theme`, `web.ui.accent` | Site title, content, metadata, and theme; these keys belong in `yaml.d/branding.yml` |
 | `web.*`, `server.cors`, `server.csrf`, `server.url_detection`, `server.compression`, `server.healthz`, `server.i18n` | Web behavior, browser security, URL handling, health aliases, and languages |
 | `server.pages`, `server.contact` | Public page content, contact form fields, CAPTCHA, and abuse controls |
 | `server.privacy`, `server.compliance`, `server.tracking` | Privacy disclosures, consent, compliance, and consent-gated analytics |
@@ -213,7 +228,7 @@ The YAML example above highlights commonly configured values; it is not the full
 | `server.auth`, `server.users`, `server.orgs`, `server.session`, `server.admin`, `server.admin_path` | Authentication, regular users, sessions, and administration |
 | `test.*` | Speed-test duration, concurrency, data chunk size, and retention |
 
-The server writes node-specific values to `server.yml`, area settings to `yaml.d/`, and credentials to `secrets.yml`. Environment variables for database and cache connection URLs seed configuration on first run; later starts use the saved values. Do not put credentials into `server.yml` when the application can keep them in `secrets.yml`.
+The server writes node-specific values to `server.yml`, area settings such as branding to `yaml.d/`, and credentials to `secrets.yml`. Environment variables for database and cache connection URLs seed configuration on first run; later starts use the saved values. Do not put credentials into `server.yml` when the application can keep them in `secrets.yml`.
 
 User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. `roles.available` is the allowlist for account and invite roles; `roles.default` applies to new self-registrations. The permissions map associates configured role names with their regular-user permissions and never grants Server Admin access. The `auth` section controls password complexity and whether users may enable two-factor authentication. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
 
@@ -221,7 +236,7 @@ User configuration belongs under `server.users`. Registration mode is `open` or 
 
 SMTP settings may be supplied in `server.notifications.email.smtp` and `server.notifications.email.from`, or through `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, and `SMTP_FROM_EMAIL`. With no SMTP server, notification records remain available in the application but email delivery is skipped.
 
-Other `server` settings include contact recipients and webhooks, DPO details, contact-form CAPTCHA and abuse controls, SSL certificates and Let's Encrypt, scheduler tasks and timezone, rate limits, branding, and SEO. A security PGP public key is served at `/.well-known/pgp-key.asc` while a keypair exists. Do not put secrets in public documentation or expose them through public configuration APIs.
+Other `server` settings include contact recipients and webhooks, DPO details, contact-form CAPTCHA and abuse controls, SSL certificates and Let's Encrypt, scheduler tasks and timezone, and rate limits. Branding and SEO settings live in `yaml.d/branding.yml`. A security PGP public key is served at `/.well-known/pgp-key.asc` while a keypair exists. Do not put secrets in public documentation or expose them through public configuration APIs.
 
 The `/server/privacy` page and `/api/{api_version}/server/privacy` response use `server.privacy` to show sale status, sharing, cookie descriptions, retention, and third-party services. The CCPA controls appear only when `server.privacy.data.sold` is true. Administrators can edit these settings at `/server/{admin_path}/privacy`; the authenticated API mirror is `/api/{api_version}/server/{admin_path}/pages/privacy` (`GET` and `PATCH`). Operators may extend the built-in policy with `server.branding.content.privacy`; the built-in collection, usage, and security sections remain application content.
 
