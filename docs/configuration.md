@@ -87,6 +87,16 @@ server:
       password_require_uppercase: false
       password_require_number: false
       password_require_special: false
+  auth:
+    oidc:
+      enabled: false
+      providers: []
+    ldap:
+      enabled: false
+      providers: []
+    saml:
+      enabled: false
+      providers: []
   database:
     driver: file
   cache:
@@ -184,6 +194,8 @@ test:
   timeout: 60
 ```
 
+`server.auth` configures external identity providers. The family-level `enabled` switch and each provider's `enabled` switch must both be true for its provider to be offered; all families and provider lists are disabled or empty in the example. Provider client secrets, LDAP bind passwords, and SAML private keys are stored encrypted in `secrets.yml`, not in the provider's `server.yml` entry. OIDC requires HTTPS plus PKCE, state, and nonce validation. LDAP requires LDAPS or StartTLS; plaintext is limited to loopback testing. SAML uses the maintained `github.com/supatype/saml` fork selected for the Go advisory fix recorded in [IDEA.md](../IDEA.md). The administrator UI manages provider configuration; external login flows are still under implementation.
+
 Branding, SEO, and the default theme belong in the `yaml.d/branding.yml` drop-in, not the generated `server.yml`. Create this file under the configuration directory when you want to change these defaults:
 
 ```yaml
@@ -232,7 +244,7 @@ The server writes node-specific values to `server.yml`, area settings such as br
 
 User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. `roles.available` is the allowlist for account and invite roles; `roles.default` applies to new self-registrations. The permissions map associates configured role names with their regular-user permissions and never grants Server Admin access. The `auth` section controls password complexity and whether users may enable two-factor authentication. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
 
-`server.database.driver` selects the database implementation. The default `file` value uses the application's SQLite storage. Cache type can be `none`, `memory`, `valkey`, or `redis`; URL schemes `valkey://`, `redis://`, `valkeys://`, and `rediss://` are supported. Cluster mode requires database index zero. Cache connection options include TLS, certificate paths, pool sizing, timeout, key prefix, and expiry. A credential-bearing `CACHE_URL` is saved in `secrets.yml`; subsequent starts use the saved URL rather than replacing it from the environment.
+`server.database.driver` is currently operational only with the default `file` value, which uses the application's SQLite storage. Remote database drivers and cluster synchronization are not implemented yet; setting `server.cache.cluster` does not make a multi-node deployment operational. Cache type can be `none`, `memory`, `valkey`, or `redis`; URL schemes `valkey://`, `redis://`, `valkeys://`, and `rediss://` are supported. Cache connection options include TLS, certificate paths, pool sizing, timeout, key prefix, and expiry. A credential-bearing `CACHE_URL` is saved in `secrets.yml`; subsequent starts use the saved URL rather than replacing it from the environment.
 
 SMTP settings may be supplied in `server.notifications.email.smtp` and `server.notifications.email.from`, or through `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, and `SMTP_FROM_EMAIL`. With no SMTP server, notification records remain available in the application but email delivery is skipped.
 

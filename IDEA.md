@@ -63,6 +63,7 @@ api_version: v1
 
 - Client IP privacy is a product requirement for speed-test result data: only a one-way hash may be persisted there. Operational logging follows AI.md's explicit requirement to record the resolved full client IP for access, security, rate-limit, and audit purposes.
 - Sharing is opt-in per result and does not make the owner's private account history public.
+- SAML service-provider support uses `github.com/supatype/saml` v0.7.0, maintained at [github.com/supatype/saml](https://github.com/supatype/saml), rather than upstream `github.com/crewjam/saml`. The fork documents namespace binding for signed assertion identity and attributes, replay checks, and fixes addressing Go advisory GO-2026-6909 ([official advisory](https://pkg.go.dev/vuln/GO-2026-6909)); retain the `govulncheck` gate and reassess this choice if upstream publishes a fixed release.
 - There are no intentional security exceptions or weaker compatibility modes.
 
 ### API routes

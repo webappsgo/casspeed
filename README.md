@@ -122,7 +122,7 @@ Go commands run in the `casjaysdev/go:latest` toolchain container. Do not build 
 
 ```sh
 make build     # Server and CLI for all eight OS/architecture combinations
-make test      # Vet, unit tests, and coverage gate
+make test      # CI quality gates, unit tests, coverage, and isolated container smoke checks
 make docker    # Multi-architecture image build
 make release   # Build release artifacts
 ```

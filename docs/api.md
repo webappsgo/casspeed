@@ -26,10 +26,11 @@ The browser registration route is `/server/auth/register`; public registration i
 | Method | Route | Purpose |
 |---|---|---|
 | `POST` | `/api/v1/server/auth/register` | Register when open registration is enabled |
-| `POST` | `/api/v1/server/auth/login` | Start an account session |
-| `POST` | `/api/v1/server/auth/logout` | Revoke the current account session |
+| `POST` | `/api/v1/server/auth/login` | Authenticate and return a 24-hour named Bearer token; returns a single-use partial token when 2FA is required |
+| `POST` | `/api/v1/server/auth/logout` | Revoke the authenticated Bearer token |
 | `POST` | `/api/v1/server/auth/password/forgot` | Request a password reset without revealing whether an account exists |
 | `POST` | `/api/v1/server/auth/password/reset` | Use a valid one-time reset token |
+| `POST` | `/api/v1/server/auth/username/forgot` | Request a username reminder without revealing whether an account exists |
 | `POST` | `/api/v1/server/auth/verify` | Verify an email address with a one-time token |
 | `POST` | `/api/v1/server/auth/2fa` | Complete a pending TOTP login challenge |
 | `POST` | `/api/v1/server/auth/recovery/use` | Complete a pending login with a one-time recovery code |
@@ -58,7 +59,13 @@ The browser registration route is `/server/auth/register`; public registration i
 | `GET` | `/api/v1/users/data/export/{export_id}` | Download a ready export |
 | `POST` | `/api/v1/users/data/delete` | Request account deletion |
 
+API login accepts `identifier` and `password`; a user identifier may be a numeric user ID, username, or email address. API login sets no cookie. A regular-user login returns `data.token` as a one-time-displayed `usr_` Bearer token; an administrator login returns a named `adm_` Bearer token. Both are stored by hash with a 24-hour expiry and can be revoked. When TOTP or a passkey requires another step, login returns `data.requires_2fa` and a five-minute `data.partial_token` instead.
+
 User self-management routes require an authenticated user identity. API tokens are sent as `Authorization: Bearer <token>`; browser forms use the account session and CSRF protection. Routes identify the current user from the credential and do not accept a caller-selected user ID. There is no API to read another user's profile, devices, tokens, or test history. The live OpenAPI document is the authoritative request/response schema.
+
+## Administration
+
+The administrator rate-limit settings are available at `/api/{api_version}/server/{admin_path}/security/ratelimit`. `GET` returns the current always-on limits under `settings`; `PATCH` accepts a partial JSON object with any of `read`, `write`, `health`, `strict`, `auth_failures`, `global_burst`, and `auth`. Each window is expressed in seconds. Values must be positive and within the supported bounds. These routes require an administrator Bearer token; the browser settings page uses a CSRF-protected HTML form at `/server/{admin_path}/security/ratelimit`.
 
 Additional account-security operations include `POST /api/v1/users/security/password` to change a password, `GET /api/v1/users/security/sessions` to list active sessions, `DELETE /api/v1/users/security/sessions/{session_id}` to revoke one, and `POST /api/v1/users/security/recovery-keys/ack` to acknowledge one-time recovery-code display. User token metadata can be read at `GET /api/v1/users/tokens/{token_id}`; the raw secret is returned only by token creation.
 
@@ -108,6 +115,16 @@ Administration APIs are below `/api/v1/server/{admin_path}/` and require an admi
 | `GET`, `PATCH` | `/api/v1/server/{admin_path}/privacy` | Read or update privacy disclosures |
 | `GET`, `PATCH` | `/api/v1/server/{admin_path}/pages/privacy` | Privacy settings compatibility path |
 | `GET`, `PATCH` | `/api/v1/server/{admin_path}/tracking` | Read or update analytics settings |
+| `GET`, `PATCH` | `/api/v1/server/{admin_path}/security/ratelimit` | Read or update always-on request limits |
+| `GET`, `PATCH` | `/api/v1/server/{admin_path}/security/auth` | Read or update password, two-factor, and external-provider enablement settings |
+| `GET` | `/api/v1/server/{admin_path}/security/tokens` | List user and administrator API token metadata |
+| `DELETE` | `/api/v1/server/{admin_path}/security/tokens/{id}` | Revoke an API token |
+| `POST` | `/api/v1/server/{admin_path}/security/tokens/{id}/rotate` | Rotate an API token and return its new secret once |
+| `GET` | `/api/v1/server/auth/ldap` | List display names for enabled LDAP providers |
+| `GET` | `/api/v1/server/auth/saml` | List display names for enabled SAML providers |
+| `GET`, `POST` | `/api/v1/server/{admin_path}/security/auth/{oidc|ldap|saml}/providers` | List or create an external identity provider |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/server/{admin_path}/security/auth/{oidc|ldap|saml}/providers/{provider}` | Read, update, or remove an external identity provider |
+| `GET`, `PATCH` | `/api/v1/server/{admin_path}/web/well-known` | Read or update security.txt and llms.txt configuration without changing entry availability |
 | `GET`, `POST`, `PATCH`, `DELETE` | `/api/v1/server/{admin_path}/roles[/{id}]` | List, create, update, or remove user roles |
 | `GET`, `POST`, `DELETE` | `/api/v1/server/{admin_path}/users/invites[/{id}]` | List, create, inspect, or revoke user invites |
 | `GET`, `DELETE` | `/api/v1/server/{admin_path}/moderation/users[/{id}]` | List, inspect, or delete regular user accounts |
@@ -118,11 +135,15 @@ Admin profile API routes also support TOTP and passkey status, enrollment, and r
 
 Password reset requests use `POST /api/v1/server/auth/password/forgot` or the server-rendered `GET`/`POST /server/auth/password/forgot` form. With SMTP configured, the service emails a one-hour, single-use link. Complete the reset with `POST /api/v1/server/auth/password/reset` or use the server-rendered form at `/server/auth/password/reset`; completing a reset changes the stored password and revokes the user's existing sessions. Responses do not disclose whether the submitted email belongs to an account.
 
+Username reminders use `POST /api/v1/server/auth/username/forgot` or the server-rendered `GET`/`POST /server/auth/username/forgot` form. If the email belongs to an enabled admin or user and SMTP is configured, the username is sent to that mailbox. The response is the same whether the email matches an account or delivery succeeds.
+
 ## Authentication and scope
 
 Public API routes work without a token. Send `Authorization: Bearer <token>` for private account data, server administration, and MCP. API session cookies do not identify a user; the anonymous owner cookie is used only to authorize that browser's own speed-test result. Invalid bearer credentials return `401`; a valid token without the required scope or ownership returns `403`.
 
-Tokens use the `adm_` administrator or `usr_` user prefix and a cryptographically random 32-character base62 suffix. Tokens are shown once and stored as SHA-256 hashes. Their scopes are `global`, `read-write`, or `read`; agent scope is restricted to agent routes. The operator token is generated into the private `secrets.yml` file and printed once on first creation. Setup also returns one administrator API token once; it authenticates to admin API routes and is stored as a SHA-256 hash.
+Tokens use the `adm_` administrator or `usr_` user prefix and a cryptographically random 32-character base62 suffix. Tokens are shown once and stored as SHA-256 hashes. Their scopes are `global`, `read-write`, or `read`; agent scope is restricted to agent routes. API password login creates a named `login` token that expires after 24 hours. The operator token is generated into the private `secrets.yml` file and printed once on first creation. Setup also returns one administrator API token once; it authenticates to admin API routes and is stored as a SHA-256 hash.
+
+External identity provider CRUD requires an administrator bearer token. OIDC client secrets, LDAP bind passwords, and SAML signing private keys are encrypted in `secrets.yml` and never returned by provider reads; responses include a `*_configured` flag instead. Browser administration can list, create, edit, and remove providers. The public LDAP and SAML provider-list endpoints return only enabled provider names and display names. Connection tests, SP metadata and certificate management, and external login flows are not yet available.
 
 ## GraphQL
 
@@ -140,7 +161,7 @@ I2P administration is available to an administrator bearer token at `/api/{api_v
 
 ## Server administration APIs
 
-Administrative requests use an `adm_` bearer token and are scoped under `/api/{api_version}/server/{admin_path}/`. Current API groups include server status and statistics, backup create/list/restore/download, branding, email settings and templates, scheduler operations, public-page content, privacy and tracking settings, compliance and breach records, user moderation and invitations, network blocklists, Tor and I2P controls, and security allowlist, blocked-address, and account-lock controls. The log API lists available files with `GET .../logs`, returns at most 500 entries with `GET .../logs/{type}?limit=100&offset=0`, and downloads the named file with `GET .../logs/{type}/download`. Log names are allowlisted, reads are bounded, and audit logs cannot be cleared. Consult the live OpenAPI document for exact schemas and currently mounted routes.
+Administrative requests use an `adm_` bearer token and are scoped under `/api/{api_version}/server/{admin_path}/`. Current API groups include server status and statistics, backup create/list/restore/download, branding, SSL/TLS and Let's Encrypt settings, email settings and templates, scheduler operations, public-page content, privacy and tracking settings, compliance and breach records, user moderation and invitations, network blocklists, Tor and I2P controls, and security allowlist, blocked-address, and account-lock controls. SSL settings are available through `GET` and `PATCH .../ssl`; the private key path is redacted in responses. `POST .../ssl/renew` is routed but currently returns `503` because certificate renewal is not implemented. The log API lists available files with `GET .../logs`, returns at most 500 entries with `GET .../logs/{type}?limit=100&offset=0`, downloads the named file with `GET .../logs/{type}/download`, and clears a non-audit log with `POST .../logs/{type}/clear`. Log names are allowlisted and reads are bounded; attempts to clear the append-only audit log return `403`. Consult the live OpenAPI document for exact schemas and currently mounted routes.
 
 ## Health and public server information
 
