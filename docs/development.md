@@ -5,15 +5,31 @@ CasSpeed is a Go project. Docker, Make, and Git are required; the supported Go t
 ## Build and validate
 
 ```sh
-make build       # server and CLI for supported platforms
+make build       # debug server and CLI binaries for all configured platforms
 make test        # vet, static analysis, vulnerability and shell checks, coverage, and container smoke tests
-make docker      # multi-architecture build plus local AMD64 image and runtime contract check
+make docker      # build and load a host-platform image locally; does not push
 make release     # release artifacts for supported platforms
 ```
 
-`make test` runs the same quality gates as CI, then builds host-platform debug binaries in a randomized project-scoped OS temporary directory and runs the isolated basic smoke suite. Temporary build output is removed when the suite exits. `make docker` builds the AMD64 and ARM64 variants, then loads the AMD64 image locally as `ghcr.io/casapps/casspeed:latest` and checks the required runtime binaries and server health/Tor status. It does not push an image. Set `REQUIRE_OVERLAY=1` when outbound Tor access is required and a networkless skip is unacceptable.
+`make test` runs Go vet, Staticcheck, govulncheck, shell checks, Go tests with coverage, and the isolated basic smoke suite. Temporary coverage output is removed when the suite exits. `make docker` uses Buildx to build and load the current host platform as `ghcr.io/casapps/casspeed:latest`; it does not push an image.
 
 Use the repository's test/lint wrapper for direct test and lint commands. Run formatting in the project toolchain container. Do not run Go builds or binaries directly on the host.
+
+## Run the application locally in a container
+
+Build the local host-platform image, then start it with private persistent Docker volumes:
+
+```sh
+make docker
+docker run --rm --name casspeed-development \
+  -p 127.0.0.1:64580:80 \
+  -v casspeed-development-config:/config \
+  -v casspeed-development-data:/data \
+  -e MODE=development -e DEBUG=true \
+  ghcr.io/casapps/casspeed:latest
+```
+
+Open `http://127.0.0.1:64580` on the development machine. This is a local-development URL; production deployments should use HTTPS through a trusted reverse proxy.
 
 ## Source layout
 

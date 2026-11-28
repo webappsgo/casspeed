@@ -59,6 +59,15 @@ sudo install -m 0755 casspeed /usr/local/bin/casspeed
 
 On macOS, remove the quarantine attribute after installing: `xattr -d com.apple.quarantine /usr/local/bin/casspeed`. On Windows, download the matching `.exe` and add its directory to `PATH`. On Linux, macOS, and FreeBSD, select the architecture-specific asset, make it executable, and install it in a directory on `PATH`.
 
+### systemd
+
+On Linux systems using systemd, install the service unit and start it:
+
+```sh
+sudo casspeed --service --install
+sudo systemctl enable --now casspeed
+```
+
 ### Docker Compose
 
 The Compose file is [docker/docker-compose.yml](docker/docker-compose.yml). The default listener is bound to `172.17.0.1:64580`; configure a trusted reverse proxy to expose the service and provide HTTPS.
@@ -123,7 +132,7 @@ Go commands run in the `casjaysdev/go:latest` toolchain container. Do not build 
 ```sh
 make build     # Server and CLI for all eight OS/architecture combinations
 make test      # CI quality gates, unit tests, coverage, and isolated container smoke checks
-make docker    # Multi-architecture image build
+make docker    # Build and load the local host-platform image; does not push
 make release   # Build release artifacts
 ```
 
@@ -131,7 +140,13 @@ See the [development guide](https://casapps-casspeed.readthedocs.io/en/latest/de
 
 ## Disclaimer
 
-CasSpeed measurements are estimates affected by the client device, network path, server capacity, and other traffic. They do not guarantee the performance a service provider delivers. This software is provided "as is," without warranty of any kind; evaluate it before production use and keep independent backups of important data.
+CasSpeed measurements are estimates affected by the client device, network path, server capacity, and other traffic. They do not guarantee the performance a service provider delivers. This software is provided "as is" without warranty of any kind. By using it, you acknowledge the following:
+
+- **No warranty:** The project provides no guarantee that the software will meet your needs or operate without interruption.
+- **No professional advice:** Measurements and reports are informational and are not professional advice.
+- **Third-party services:** If you configure email, DNS, cache, or identity services, their terms and privacy practices apply separately.
+- **Security:** The project follows security practices, but no software can be guaranteed free of vulnerabilities.
+- **Production use:** Review the configuration, protect credentials, and keep independent backups before deploying it.
 
 ## License
 

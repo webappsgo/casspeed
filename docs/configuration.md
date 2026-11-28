@@ -19,7 +19,7 @@ Command-line path flags take precedence over their matching environment variable
 | `--mode` | `MODE` |
 | `--i2p` | `I2P_ENABLED` |
 
-`DATABASE_DIR` selects the database directory. `NO_COLOR` disables colored terminal output. The default listener is `[::]`; the port is chosen from the 64xxx range. The Docker entrypoint supplies its container listener address and port. `server.mode` is `production` or `development`; debug mode does not bypass authentication.
+`DATABASE_DIR` selects the SQLite database directory. `NO_COLOR` disables colored terminal output. The default listener is `[::]`; the port is chosen from the 64xxx range. The Docker entrypoint supplies its container listener address and port. `server.mode` is `production` or `development`; debug mode does not bypass authentication.
 
 In the Docker image, `CONFIG_DIR` defaults to `/config/casspeed` and `DATA_DIR` to `/data/casspeed`. The entrypoint defaults `LISTEN` to `[::]` and `PORT` to `80`, enables `--debug` when `DEBUG` is `true`, `yes`, `1`, `on`, or `enable` (case-insensitive), and forwards additional arguments to the server process.
 
@@ -35,13 +35,16 @@ In the Docker image, `CONFIG_DIR` defaults to `/config/casspeed` and `DATA_DIR` 
 | `I2P_ENABLED` | Every startup | Enable or disable the I2P eepsite; default is enabled in containers and disabled elsewhere |
 | `NO_COLOR`, `TERM` | Every startup | Control terminal color output; `TERM=dumb` disables ANSI output |
 | `LC_ALL`, `LANG` | CLI | Select the CLI output language when `--lang` is not provided |
+| `SHELL` | Server CLI completion generation | Choose the shell when running `casspeed --shell completions` without a shell argument; defaults to Bash |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL` | Every startup | Configure email delivery; secrets should be supplied through the deployment's secret mechanism |
-| `APPLICATION_NAME`, `APPLICATION_TAGLINE` | First run | Seed initial branding values; later changes belong in configuration or the admin interface |
-| `DATABASE_DRIVER`, `DATABASE_URL`, `CACHE_URL` | First run | Seed the database and cache connection settings; saved values take precedence on later starts |
+| `APPLICATION_NAME`, `APPLICATION_TAGLINE` | First run | Seed initial branding values in `yaml.d/branding.yml`; later starts use the saved file |
+| `DATABASE_DRIVER` | First run | Select the database driver when `DATABASE_URL` is absent; ignored after the connection is saved |
+| `DATABASE_URL` | First run | Seed `server.database.url`; the URL scheme selects the driver and saved settings win on later starts |
+| `CACHE_URL` | First run | Seed `server.cache.url`; the URL scheme selects the cache type and saved settings win on later starts |
 | `CASSPEED_BACKUP_KEY` | Backup and restore commands | 64-character hexadecimal encryption key; keep it separate from backup files |
 | `CASSPEED_TOKEN` | CLI | Fallback API token after `--token` and `--token-file`, before the saved user token |
 
-`HOSTNAME` is a fallback input when resolving the server's public hostname. The service also uses operating-system variables such as `ProgramData` and `AppData` when selecting Windows paths.
+`HOSTNAME` is a fallback input when resolving the server's public hostname. The service also reads platform-provided values such as `ProgramData`, `AppData`, and `LocalAppData` to select Windows paths. `container` and `KUBERNETES_SERVICE_HOST` identify application containers; `RC_SVCNAME` and `INVOCATION_ID` identify supervised service contexts. These values affect runtime detection only and are not application configuration keys.
 
 ## Overlay networks
 
@@ -66,6 +69,19 @@ server:
   mode: production
   admin_path: administration
   api_version: v1
+  session:
+    admin:
+      cookie_name: admin_session
+      max_age: 30d
+      idle_timeout: 24h
+    user:
+      cookie_name: user_session
+      max_age: 7d
+      idle_timeout: 24h
+    extend_on_activity: true
+    secure: auto
+    http_only: true
+    same_site: strict
   users:
     enabled: true
     registration:
@@ -98,14 +114,9 @@ server:
       enabled: false
       providers: []
   database:
-    driver: file
+    driver: sqlite
   cache:
     type: memory
-    host: localhost
-    port: 6379
-    db: 0
-    tls: false
-    cluster: false
   notifications:
     email:
       smtp:
@@ -194,7 +205,9 @@ test:
   timeout: 60
 ```
 
-`server.auth` configures external identity providers. The family-level `enabled` switch and each provider's `enabled` switch must both be true for its provider to be offered; all families and provider lists are disabled or empty in the example. Provider client secrets, LDAP bind passwords, and SAML private keys are stored encrypted in `secrets.yml`, not in the provider's `server.yml` entry. OIDC requires HTTPS plus PKCE, state, and nonce validation. LDAP requires LDAPS or StartTLS; plaintext is limited to loopback testing. SAML uses the maintained `github.com/supatype/saml` fork selected for the Go advisory fix recorded in [IDEA.md](../IDEA.md). The administrator UI manages provider configuration; external login flows are still under implementation.
+`server.auth` configures external identity providers. The family-level `enabled` switch and each provider's `enabled` switch must both be true for its provider to be offered; all families and provider lists are disabled or empty in the example. Provider client secrets, LDAP bind passwords, and SAML private keys are stored encrypted in `secrets.yml`, not in the provider's `server.yml` entry. OIDC requires HTTPS plus PKCE, state, and nonce validation; browser and native API flows keep state and verifier data in short-lived server transactions. LDAP requires LDAPS or StartTLS; plaintext is limited to loopback testing. SAML uses the maintained `github.com/supatype/saml` fork selected for the Go advisory fix recorded in [IDEA.md](../IDEA.md). Provider management, OIDC/LDAP/SAML login, external-account username confirmation, and SAML single logout are implemented. Automatic pre-expiry SAML key rotation remains pending.
+
+`server.session.admin` and `server.session.user` set the cookie name, absolute maximum age, and idle timeout for each session type. Durations accept Go duration units and day suffixes such as `30d`. `extend_on_activity` refreshes the idle expiry on requests; `secure` accepts `auto`, `true`, or `false`; `http_only` controls the HttpOnly cookie attribute; and `same_site` accepts `strict`, `lax`, or `none`. Defaults are 30 days for administrator max age, 7 days for user max age, and 24 hours for both idle timeouts.
 
 Branding, SEO, and the default theme belong in the `yaml.d/branding.yml` drop-in, not the generated `server.yml`. Create this file under the configuration directory when you want to change these defaults:
 
@@ -221,14 +234,20 @@ web:
 
 The `branding.yml` file also accepts the full `server.seo` settings. Logo, favicon, and OpenGraph image values can be HTTPS URLs, `data:` URIs, or filenames in `{config_dir}/assets/`; empty values use the embedded defaults. Keep the file private (`0600`). The setup flow and administration interface write branding changes to this file.
 
+## TLS and Let's Encrypt
+
+`server.ssl.enabled` enables HTTPS. `server.port` accepts one port or an HTTP/HTTPS pair such as `80,443`; a single port of `443` is HTTPS-only. The TLS listener is bound during startup and certificate-path settings require a restart. Certificates can be supplied with `cert` and `key`, or managed by the built-in Let's Encrypt client.
+
+Let's Encrypt supports `http-01`, `tls-alpn-01`, and `dns-01`. HTTP-01 challenges are served by the HTTP listener and TLS-ALPN-01 by the HTTPS listener; the server does not open separate challenge ports. DNS-01 supports every DNS provider bundled with lego. Select the provider and enter its environment-variable credential names and values in `/server/{admin_path}/ssl` or through the SSL API. Credentials are encrypted at rest and returned only as masked values. DNS provider construction is checked before issuance; successful issuance is the proof that DNS access works. Wildcard certificates require DNS-01.
+
 ## Configuration sections
 
-The YAML example above highlights commonly configured values; it is not the full schema. Configuration is merged from built-in defaults, `server.yml`, `yaml.d/*.yml` in filename order, and then `secrets.yml`. The main key groups are:
+Configuration is merged from built-in defaults, `server.yml`, `yaml.d/*.yml` in filename order, and then `secrets.yml`. Area-specific settings belong in their matching drop-in file; credentials belong in `secrets.yml`. The main key groups are:
 
 | Keys | Purpose |
 |---|---|
 | `server.address`, `server.port`, `server.fqdn`, `server.api_version`, `server.baseurl`, `server.mode`, `server.pidfile`, `server.daemonize` | This node's listener and runtime identity |
-| `server.database`, `server.cache`, `server.ssl`, `server.trusted_proxies`, `server.cluster` | Storage, cache, TLS, proxy trust, and cluster settings |
+| `server.database`, `server.cache`, `server.ssl`, `server.trusted_proxies`, `server.cluster` | Database driver/URL/replicas, cache backend and connection, TLS/Let's Encrypt, proxy trust, and node-cluster settings |
 | `server.branding`, `server.seo`, `web.ui.theme`, `web.ui.accent` | Site title, content, metadata, and theme; these keys belong in `yaml.d/branding.yml` |
 | `web.*`, `server.cors`, `server.csrf`, `server.url_detection`, `server.compression`, `server.healthz`, `server.i18n` | Web behavior, browser security, URL handling, health aliases, and languages |
 | `server.pages`, `server.contact` | Public page content, contact form fields, CAPTCHA, and abuse controls |
@@ -244,7 +263,23 @@ The server writes node-specific values to `server.yml`, area settings such as br
 
 User configuration belongs under `server.users`. Registration mode is `open` or `private`; private mode blocks public self-registration while preserving administrator invitation and direct-creation flows. Allowed and blocked email-domain lists are checked during registration. `roles.available` is the allowlist for account and invite roles; `roles.default` applies to new self-registrations. The permissions map associates configured role names with their regular-user permissions and never grants Server Admin access. The `auth` section controls password complexity and whether users may enable two-factor authentication. If verification is required but SMTP is not configured, the app treats addresses as verified and does not send email.
 
-`server.database.driver` is currently operational only with the default `file` value, which uses the application's SQLite storage. Remote database drivers and cluster synchronization are not implemented yet; setting `server.cache.cluster` does not make a multi-node deployment operational. Cache type can be `none`, `memory`, `valkey`, or `redis`; URL schemes `valkey://`, `redis://`, `valkeys://`, and `rediss://` are supported. Cache connection options include TLS, certificate paths, pool sizing, timeout, key prefix, and expiry. A credential-bearing `CACHE_URL` is saved in `secrets.yml`; subsequent starts use the saved URL rather than replacing it from the environment.
+External identity settings live in `server.auth.oidc`, `server.auth.ldap`, and `server.auth.saml`. A family-level `enabled` flag and each provider's `enabled` flag must both be true before its sign-in option is offered. OIDC providers define issuer/discovery URL, client ID and scopes, claim mapping, username resolution, group-to-role mapping, PKCE/state/nonce requirements, clock skew, and token/session behavior. LDAP providers define a TLS-protected server URL, bind and search DNs, user/group filters, attribute mapping, connection timeouts, pool limits, failover servers, and nested-group behavior. SAML providers define IdP metadata, SP entity ID and ACS URL, attribute/role mapping, NameID format, signing/logout behavior, and certificate settings. The `client_secret`, `bind_password`, and `sp_private_key_pem` values are encrypted in `secrets.yml`; never place them in `server.yml`. See [Integrations](integrations.md) for provider setup and login behavior.
+
+`server.database.driver` selects `sqlite`, `libsql` (alias `turso`), `postgres` (aliases `pgsql` and `postgresql`), `mysql` (alias `mariadb`), or `mssql`. Only SQLite runs without `server.database.url`. For URL-based connections, the URL scheme selects the driver; `DATABASE_DRIVER` is needed only for SQLite. `DATABASE_URL` seeds the connection on first run, then the saved URL takes precedence. MongoDB is not a primary database and is configured only in a project-specific `mongodb:` block. `server.database.replicas` lists replica connections; in cluster mode, every node joins the same remote primary and replicas receive data from that source of truth. `server.database.cache.enabled` defaults to false and controls a separate local SQLite cache.
+
+Cache type can be `none`, `memory`, `valkey`, or `redis`. The `valkey://` and `redis://` schemes use plaintext transport; `valkeys://` and `rediss://` enable TLS. Cache connection options include a URL or separate host, port, database number, user/password, TLS and certificate settings, pool sizing, connection timeouts, key prefix, and expiry. `CACHE_URL` seeds the connection on first run and is ignored afterward. A URL containing a password or token is stored in `secrets.yml`; it is redacted in the admin interface and never returned by an API.
+
+| Database driver | URL form | Example |
+|---|---|---|
+| SQLite | Path or `file:` | `{data_dir}/db/server.db` |
+| libSQL | `libsql://`, `https://` | `libsql://{database}.turso.io?authToken={token}` |
+| PostgreSQL | `postgres://`, `postgresql://` | `postgresql://{user}:{password}@{host}:5432/{database}?sslmode=verify-full` |
+| MySQL | `mysql://`, `mariadb://` | `mariadb://{user}:{password}@{host}:3306/{database}` |
+| Microsoft SQL Server | `sqlserver://`, `mssql://` | `sqlserver://{user}:{password}@{host}:1433?database={database}&encrypt=true` |
+| Valkey cache | `valkey://`, `valkeys://` | `valkey://:{password}@{host}:6379/0` |
+| Redis cache | `redis://`, `rediss://` | `rediss://{user}:{password}@{host}:6379/0` |
+
+For remote database or cache URLs, choose a TLS mode explicitly. `sslmode=verify-full` verifies a database certificate chain and hostname; `tls_skip_verify: false` enables cache verification. Credentials in connection URLs are secrets: use deployment secret injection for first-run variables, keep the saved secret file private, and never add a real URL to a public example.
 
 SMTP settings may be supplied in `server.notifications.email.smtp` and `server.notifications.email.from`, or through `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_FROM_NAME`, and `SMTP_FROM_EMAIL`. With no SMTP server, notification records remain available in the application but email delivery is skipped.
 
