@@ -41,6 +41,7 @@ The browser registration route is `/server/auth/register`; public registration i
 | `GET` | `/api/v1/users` | Read the current user's profile |
 | `PATCH` | `/api/v1/users` | Update the current user's profile |
 | `GET` | `/api/v1/users/settings` | Read the current user's settings |
+| `PATCH` | `/api/v1/users/settings` | Partially update account, privacy, per-event notification, or appearance preferences |
 | `GET` | `/api/v1/users/security` | Read the current user's security summary |
 | `PATCH` | `/api/v1/users/email` | Request an account email change |
 | `GET` | `/api/v1/users/security/2fa` | Read authenticator-based two-factor status |
@@ -66,6 +67,8 @@ API login accepts `identifier` and `password`; a user identifier may be a numeri
 Web sessions can be refreshed through `POST /server/auth/refresh` or `POST /api/v1/server/auth/refresh` using the configured user or administrator session cookie (defaults: `user_session` and `admin_session`). Refresh rotates the session ID, invalidates the old ID immediately, and returns `data.expires_at`; Bearer tokens cannot be refreshed. Cookie names, maximum age, idle timeout, and security attributes are configured under `server.session`.
 
 User self-management routes require an authenticated user identity. API tokens are sent as `Authorization: Bearer <token>`; browser forms use the account session and CSRF protection. Routes identify the current user from the credential and do not accept a caller-selected user ID. There is no API to read another user's profile, devices, tokens, or test history. The live OpenAPI document is the authoritative request/response schema.
+
+Notification preferences are event-keyed under `notifications.webui` and `notifications.email`. Required security events are always enabled; `api_token_created`, `api_token_revoked`, and `profile_updated` are optional WebUI events. Unknown event keys and attempts to disable required security events are rejected. The browser settings page is `/users/settings/notifications` and includes native form submissions for those optional WebUI events.
 
 ## Administration
 
@@ -173,7 +176,7 @@ I2P administration is available to an administrator bearer token at `/api/{api_v
 
 ## Server administration APIs
 
-Administrative requests use an `adm_` bearer token and are scoped under `/api/{api_version}/server/{admin_path}/`. Current API groups include server status and statistics, backup create/list/restore/download, branding, SSL/TLS and Let's Encrypt settings, email settings and templates, scheduler operations, public-page content, privacy and tracking settings, compliance and breach records, user moderation and invitations, network blocklists, Tor and I2P controls, and security allowlist, blocked-address, and account-lock controls. SSL settings are available through `GET` and `PATCH .../ssl`; private key paths and DNS credentials are redacted in responses. `POST .../ssl/renew` forces managed certificate issuance or renewal and returns the resulting expiry time. The log API lists available files with `GET .../logs`, returns at most 500 entries with `GET .../logs/{type}?limit=100&offset=0`, downloads the named file with `GET .../logs/{type}/download`, and clears a non-audit log with `POST .../logs/{type}/clear`. Log names are allowlisted and reads are bounded; attempts to clear the append-only audit log return `403`. Consult the live OpenAPI document for exact schemas and currently mounted routes.
+Administrative requests use an `adm_` bearer token and are scoped under `/api/{api_version}/server/{admin_path}/`. Current API groups include server status and statistics, backup create/list/restore/download, branding, SSL/TLS and Let's Encrypt settings, email settings and templates, scheduler operations, public-page content, privacy and tracking settings, compliance and breach records, user moderation and invitations, network blocklists, Tor and I2P controls, and security allowlist, blocked-address, and account-lock controls. SSL settings are available through `GET` and `PATCH .../ssl`; private key paths and DNS credentials are redacted in responses. `POST .../ssl/renew` forces managed certificate issuance or renewal and returns the resulting expiry time. The log API lists available files with `GET .../logs`, returns bounded entries with `GET .../logs/{type}?limit=100&offset=0`, downloads with `GET .../logs/{type}/download`, and truncates a non-audit log with `DELETE .../logs/{type}`. The page form also retains its CSRF-protected `POST .../logs/{type}/clear` action. Log names are allowlisted and reads are bounded; attempts to clear the append-only audit log return `403`. Consult the live OpenAPI document for exact schemas and currently mounted routes.
 
 ## Health and public server information
 
@@ -184,6 +187,8 @@ Metrics are available when `server.metrics.enabled` is true at `/api/{api_versio
 ## Autodiscovery
 
 `GET /api/autodiscover` is unversioned so clients can discover the server's current API version before choosing a versioned route. It returns the standard JSON envelope with `ok: true` and a `data` object containing `name`, `version`, `api.current_version`, `urls`, `onion`, `i2p`, `cli_versions`, `cli_min_version`, `agent_versions`, and `agent_min_version`. `urls` contains deduplicated public origins on clearnet requests; a Tor request receives only its current onion origin. Overlay addresses are exposed in their own fields only when configured. Each available CLI or agent version entry includes its version and SHA-256. The response does not publish admin paths, secrets, settings, or a configuration schema.
+
+CLI release binaries are served at `GET /api/{api_version}/cli/binaries/{filename}` from the operator-provisioned CLI release directory. The handler verifies the binary against `sha256.txt`; downloads are public unless `cli.binary_download.require_auth` is enabled. The CLI discovers the active API version and release checksums through `/api/autodiscover` before downloading.
 
 ## Representations
 
